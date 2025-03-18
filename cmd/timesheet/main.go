@@ -4,14 +4,32 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 	"timesheet/api/handler"
 	"timesheet/internal/db"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	_ "github.com/go-sql-driver/mysql"
 )
+
+type KeyMap struct {
+	Up   key.Binding
+	Down key.Binding
+}
+
+var DefaultKeyMap = KeyMap{
+	Up: key.NewBinding(
+		key.WithKeys("k", "up"),        // actual keybindings
+		key.WithHelp("↑/k", "move up"), // corresponding help text
+	),
+	Down: key.NewBinding(
+		key.WithKeys("j", "down"),
+		key.WithHelp("↓/j", "move down"),
+	),
+}
 
 var baseStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.NormalBorder()).
@@ -77,27 +95,69 @@ func main() {
 	defer db.Close()
 
 	columns := []table.Column{
-		{Title: "Date", Width: 4},
-		{Title: "Client", Width: 10},
-		{Title: "Client Hours", Width: 10},
-		{Title: "Training", Width: 10},
-		{Title: "Vacation", Width: 10},
-		{Title: "Idle", Width: 10},
+		{Title: "Date", Width: 12},
+		{Title: "Day", Width: 10},
+		{Title: "Client", Width: 20},
+		{Title: "Hours", Width: 10},
+		{Title: "Total", Width: 10},
 	}
 
-	rows := []table.Row{
-		{"1", "TerraIndex", "9", "0", "0", "0"},
-		{"1", "-", "0", "9", "0", "0"},
-		{"1", "TerraIndex", "9", "0", "0", "0"},
-		{"1", "TerraIndex", "9", "0", "0", "0"},
-		{"1", "TerraIndex", "9", "0", "0", "0"},
+	// Fetch all timesheet entries
+	entries, err := db.GetAllTimesheetEntries()
+	if err != nil {
+		log.Printf("Error fetching timesheet entries: %v", err)
+		// Continue with empty table if there's an error
+	}
+
+	// Create a map of entries by date for faster lookup
+	entriesByDate := make(map[string]db.TimesheetEntry)
+	for _, entry := range entries {
+		entriesByDate[entry.Date] = entry
+	}
+
+	// Generate all days in March 2025
+	year, month := 2025, time.March
+	firstDay := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
+	lastDay := time.Date(year, month+1, 0, 0, 0, 0, 0, time.Local)
+
+	// Create table rows for each day of the month
+	rows := []table.Row{}
+	for day := firstDay; !day.After(lastDay); day = day.AddDate(0, 0, 1) {
+		dateStr := day.Format("2006-01-02")
+		weekday := day.Weekday().String()
+
+		// Default values for days without entries
+		clientName := "-"
+		clientHours := "-"
+		totalHours := "-"
+
+		// If we have an entry for this date, use its data
+		if entry, exists := entriesByDate[dateStr]; exists {
+			clientName = entry.Client_name
+			clientHours = fmt.Sprintf("%d", entry.Client_hours)
+			totalHours = fmt.Sprintf("%d", entry.Total_hours)
+		}
+
+		// Weekend styling - make them visually distinct
+		if day.Weekday() == time.Saturday || day.Weekday() == time.Sunday {
+			weekday = "💤 " + weekday // Add emoji for weekends
+		}
+
+		row := table.Row{
+			dateStr,
+			weekday,
+			clientName,
+			clientHours,
+			totalHours,
+		}
+		rows = append(rows, row)
 	}
 
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithRows(rows),
 		table.WithFocused(true),
-		table.WithHeight(7),
+		table.WithHeight(31), // Height to show entire month
 	)
 
 	s := table.DefaultStyles()

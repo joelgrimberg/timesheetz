@@ -36,15 +36,21 @@ func Close() {
 
 // TimesheetEntry represents a row in the timesheet table
 type TimesheetEntry struct {
-	Id           int
-	Date         string
-	Client_name  string
-	Client_hours int
+	Id             int
+	Date           string
+	Client_name    string
+	Client_hours   int
+	Vacation_hours int
+	Idle_hours     int
+	Training_hours int
+	Total_hours    int
 }
 
 // GetAllTimesheetEntries retrieves all entries from the timesheet table
 func GetAllTimesheetEntries() ([]TimesheetEntry, error) {
-	rows, err := db.Query("SELECT t.id, t.date, c.client_name, t.client_hours FROM timesheet t JOIN clients c ON t.client_id = c.client_id")
+	rows, err := db.Query("SELECT t.id, t.date, c.client_name, t.client_hours, t.vacation_hours, t.idle_hours, t.training_hours, " +
+		"(t.client_hours + t.vacation_hours + t.idle_hours + t.training_hours) AS total_hours " +
+		"FROM timesheet t JOIN clients c ON t.client_id = c.client_id")
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +59,7 @@ func GetAllTimesheetEntries() ([]TimesheetEntry, error) {
 	var entries []TimesheetEntry
 	for rows.Next() {
 		var entry TimesheetEntry
-		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours); err != nil {
+		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours, &entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Total_hours); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
