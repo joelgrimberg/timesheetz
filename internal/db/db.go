@@ -52,16 +52,16 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 	var query string
 	var args []any
 
-	baseQuery := "SELECT t.id, t.date, c.client_name, t.client_hours, t.vacation_hours, t.idle_hours, t.training_hours, " +
-		"(t.client_hours + t.vacation_hours + t.idle_hours + t.training_hours) AS total_hours " +
-		"FROM timesheet t JOIN clients c ON t.client_id = c.client_id"
+	baseQuery := "SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, " +
+		"(client_hours + vacation_hours + idle_hours + training_hours) AS total_hours " +
+		"FROM timesheet"
 
 	if year != 0 && month != 0 {
 		// Filter by specific month and year
 		startDate := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 		endDate := time.Date(year, month+1, 0, 23, 59, 59, 999999999, time.UTC).Format("2006-01-02")
 
-		query = baseQuery + " WHERE t.date BETWEEN ? AND ?"
+		query = baseQuery + " WHERE date BETWEEN ? AND ?"
 		args = []any{startDate, endDate}
 	} else {
 		// Get all entries
@@ -91,6 +91,23 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 	return entries, nil
 }
 
+func AddTimesheetEntry(entry TimesheetEntry) error {
+	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours)
+              VALUES (?, ?, ?, ?, ?, ?)`
+	_, err := db.Exec(query,
+		entry.Date,
+		entry.Client_name,
+		entry.Client_hours,
+		entry.Vacation_hours,
+		entry.Idle_hours,
+		entry.Training_hours)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // / PutTimesheetEntry inserts a new timesheet entry with the current date
 // and client_id fixed to '1'
 func PutTimesheetEntry(clientHours, vacationHours, idleHours, trainingHours float64) (int64, error) {
@@ -98,7 +115,7 @@ func PutTimesheetEntry(clientHours, vacationHours, idleHours, trainingHours floa
 	currentDate := time.Now().Format("2006-01-02")
 
 	// Use prepared statement to prevent SQL injection
-	stmt, err := db.Prepare("INSERT INTO timesheet (date, client_id, client_hours, vacation_hours, idle_hours, training_hours) VALUES (?, ?, ?, ?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours) VALUES (?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return 0, err
 	}

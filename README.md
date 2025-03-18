@@ -12,6 +12,9 @@
   - [x] add up / down
   - [x] add extended key view
   - [x] add left / right keys to move between months
-- [ ] Create insert form
+- [x] Create insert form
+- [ ] Create edit form
+- [ ] Add all database fields to insert form
+- [ ] Add all database fields to table
 - [ ] Build application in pipeline
 - [ ] Create installer for database
