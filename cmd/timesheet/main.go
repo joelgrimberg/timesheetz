@@ -8,28 +8,13 @@ import (
 	"timesheet/api/handler"
 	"timesheet/internal/db"
 
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	_ "github.com/go-sql-driver/mysql"
 )
-
-type KeyMap struct {
-	Up   key.Binding
-	Down key.Binding
-}
-
-var DefaultKeyMap = KeyMap{
-	Up: key.NewBinding(
-		key.WithKeys("k", "up"),        // actual keybindings
-		key.WithHelp("↑/k", "move up"), // corresponding help text
-	),
-	Down: key.NewBinding(
-		key.WithKeys("j", "down"),
-		key.WithHelp("↓/j", "move down"),
-	),
-}
 
 var baseStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.NormalBorder()).
@@ -40,9 +25,87 @@ var (
 	helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 )
 
+// KeyMap defines the keybindings for the application
+type KeyMap struct {
+	Up        key.Binding
+	Down      key.Binding
+	Left      key.Binding
+	Right     key.Binding
+	GotoToday key.Binding
+	Help      key.Binding
+	Quit      key.Binding
+	Enter     key.Binding
+	PrevMonth key.Binding
+	NextMonth key.Binding
+}
+
+// DefaultKeyMap returns a set of default keybindings
+func DefaultKeyMap() KeyMap {
+	return KeyMap{
+		Up: key.NewBinding(
+			key.WithKeys("up", "k"),
+			key.WithHelp("↑/k", "move up"),
+		),
+		Down: key.NewBinding(
+			key.WithKeys("down", "j"),
+			key.WithHelp("↓/j", "move down"),
+		),
+		Left: key.NewBinding(
+			key.WithKeys("left"),
+			key.WithHelp("←", "move left"),
+		),
+		Right: key.NewBinding(
+			key.WithKeys("right"),
+			key.WithHelp("→", "move right"),
+		),
+		GotoToday: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t", "go to today"),
+		),
+		Help: key.NewBinding(
+			key.WithKeys("?"),
+			key.WithHelp("?", "toggle help"),
+		),
+		Quit: key.NewBinding(
+			key.WithKeys("q", "esc", "ctrl+c"),
+			key.WithHelp("q/esc", "quit"),
+		),
+		Enter: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "select entry"),
+		),
+		PrevMonth: key.NewBinding(
+			key.WithKeys("h"),
+			key.WithHelp("h", "previous month"),
+		),
+		NextMonth: key.NewBinding(
+			key.WithKeys("l"),
+			key.WithHelp("l", "next month"),
+		),
+	}
+}
+
+// ShortHelp returns keybindings to be shown in the mini help view.
+func (k KeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.GotoToday, k.Help, k.Quit}
+}
+
+// FullHelp returns keybindings for the expanded help view.
+func (k KeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.Left, k.Right}, // first column
+		{k.PrevMonth, k.NextMonth},      // second column - month navigation
+		{k.GotoToday, k.Enter},          // third column
+		{k.Help, k.Quit},                // fourth column
+	}
+}
+
 type model struct {
-	table table.Model
-	// ips   []string
+	table    table.Model
+	keys     KeyMap
+	help     help.Model
+	showHelp bool
+	ShowAll  bool
 }
 
 func (m model) Init() tea.Cmd {
@@ -54,27 +117,56 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
-			if m.table.Focused() {
-				m.table.Blur()
-			} else {
-				m.table.Focus()
-			}
-		case "q", "ctrl+c":
+		switch {
+		case key.Matches(msg, m.keys.Help):
+			m.showHelp = !m.showHelp
+			return m, nil
+
+		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
-		case "enter":
-			return m, tea.Batch(
-				tea.Printf("Let's go to %s!", m.table.SelectedRow()[1]),
-			)
+
+		case key.Matches(msg, m.keys.GotoToday):
+			// Find today's date in the table and select it
+			today := time.Now().Format("2006-01-02")
+			for i, row := range m.table.Rows() {
+				if row[0] == today {
+					m.table.SetCursor(i)
+					break
+				}
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.Enter):
+			return m, tea.Printf("Selected: %s", m.table.SelectedRow()[0])
+
+		case key.Matches(msg, m.keys.PrevMonth):
+			// Functionality to be implemented later
+			return m, tea.Printf("Previous month")
+
+		case key.Matches(msg, m.keys.NextMonth):
+			// Functionality to be implemented later
+			return m, tea.Printf("Next month")
 		}
 	}
+
+	// Handle table navigation
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
 }
 
 func (m model) View() string {
-	return baseStyle.Render(m.table.View()) + "\n"
+	var s string
+	s = baseStyle.Render(m.table.View()) + "\n"
+
+	if m.showHelp {
+		// Full help view
+		s += m.help.FullHelpView(m.keys.FullHelp())
+	} else {
+		// Short help view
+		s += helpStyle.Render(m.help.ShortHelpView(m.keys.ShortHelp()))
+	}
+
+	return s
 }
 
 func initDatabase() {
@@ -172,12 +264,24 @@ func main() {
 		Bold(false)
 	t.SetStyles(s)
 
-	m := model{t}
+	// Initialize help model
+	h := help.New()
+
+	// Create model with table and keymap
+	m := model{
+		table:    t,
+		keys:     DefaultKeyMap(),
+		help:     h,
+		showHelp: false,
+	}
+
 	if _, err := tea.NewProgram(m).Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
 	}
 
+	// Note: This code will never be reached because the tea.NewProgram().Run() above
+	// will block until the program exits
 	p := tea.NewProgram(model{})
 	go handler.StartServer(p)
 }
