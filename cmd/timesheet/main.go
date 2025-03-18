@@ -7,10 +7,15 @@ import (
 	"timesheet/api/handler"
 	"timesheet/internal/db"
 
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	_ "github.com/go-sql-driver/mysql"
 )
+
+var baseStyle = lipgloss.NewStyle().
+	BorderStyle(lipgloss.NormalBorder()).
+	BorderForeground(lipgloss.Color("240"))
 
 var (
 	keywordStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
@@ -18,27 +23,8 @@ var (
 )
 
 type model struct {
-	ips        []string
-	suspending bool
-	quitting   bool
-	altscreen  bool
-}
-
-func main() {
-	dbUser, dbPassword := GetDBCredentials()
-	err := db.Connect(dbUser, dbPassword)
-	if err != nil {
-		log.Fatalf("Failed to connect to the database: %v", err)
-	}
-	defer db.Close()
-
-	p := tea.NewProgram(model{})
-	go handler.StartServer(p)
-
-	if _, err := tea.NewProgram(model{}).Run(); err != nil {
-		fmt.Println("Error running program:", err)
-		os.Exit(1)
-	}
+	table table.Model
+	// ips   []string
 }
 
 func (m model) Init() tea.Cmd {
@@ -46,58 +32,92 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c", "esc":
-			m.quitting = true
-			return m, tea.Quit
-		case "ctrl+z":
-			m.suspending = true
-			return m, tea.Suspend
-		case " ":
-			var cmd tea.Cmd
-			if m.altscreen {
-				cmd = tea.ExitAltScreen
+		case "esc":
+			if m.table.Focused() {
+				m.table.Blur()
 			} else {
-				cmd = tea.EnterAltScreen
+				m.table.Focus()
 			}
-			m.altscreen = !m.altscreen
-			return m, cmd
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "enter":
+			return m, tea.Batch(
+				tea.Printf("Let's go to %s!", m.table.SelectedRow()[1]),
+			)
 		}
-	case handler.ApiMsg:
-		m.ips = append(m.ips, msg.IP)
 	}
-	return m, nil
+	m.table, cmd = m.table.Update(msg)
+	return m, cmd
 }
 
 func (m model) View() string {
-	if m.suspending {
-		return ""
+	return baseStyle.Render(m.table.View()) + "\n"
+}
+
+func initDatabase() {
+	dbUser, dbPassword := GetDBCredentials()
+	if dbUser == "" || dbPassword == "" {
+		fmt.Println("Error: Database username or password is empty")
+		os.Exit(1)
 	}
 
-	if m.quitting {
-		return "Bye!\n"
+	err := db.Connect(dbUser, dbPassword)
+	if err != nil {
+		log.Fatalf("Failed to connect to the database: %v", err)
+	}
+}
+
+func main() {
+	initDatabase()
+	defer db.Close()
+
+	columns := []table.Column{
+		{Title: "Date", Width: 4},
+		{Title: "Client", Width: 10},
+		{Title: "Client Hours", Width: 10},
+		{Title: "Training", Width: 10},
+		{Title: "Vacation", Width: 10},
+		{Title: "Idle", Width: 10},
 	}
 
-	const (
-		altscreenMode = " altscreen mode "
-		inlineMode    = " inline mode "
+	rows := []table.Row{
+		{"1", "TerraIndex", "9", "0", "0", "0"},
+		{"1", "-", "0", "9", "0", "0"},
+		{"1", "TerraIndex", "9", "0", "0", "0"},
+		{"1", "TerraIndex", "9", "0", "0", "0"},
+		{"1", "TerraIndex", "9", "0", "0", "0"},
+	}
+
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithRows(rows),
+		table.WithFocused(true),
+		table.WithHeight(7),
 	)
 
-	var mode string
-	if m.altscreen {
-		mode = altscreenMode
-	} else {
-		mode = inlineMode
+	s := table.DefaultStyles()
+	s.Header = s.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		BorderBottom(true).
+		Bold(false)
+	s.Selected = s.Selected.
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("57")).
+		Bold(false)
+	t.SetStyles(s)
+
+	m := model{t}
+	if _, err := tea.NewProgram(m).Run(); err != nil {
+		fmt.Println("Error running program:", err)
+		os.Exit(1)
 	}
 
-	namesView := ""
-	for _, name := range m.ips {
-		namesView += fmt.Sprintf("{ Name: \"%s\" }\n", name)
-	}
-
-	return fmt.Sprintf("\n\n  You're in %s\n\n\n", keywordStyle.Render(mode)) +
-		helpStyle.Render("  space: switch modes • ctrl-z: suspend • q: exit\n") +
-		fmt.Sprintf("\nAPI Data:\n%s", namesView)
+	p := tea.NewProgram(model{})
+	go handler.StartServer(p)
 }
