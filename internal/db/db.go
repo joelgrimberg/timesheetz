@@ -46,11 +46,29 @@ type TimesheetEntry struct {
 	Total_hours    int
 }
 
-// GetAllTimesheetEntries retrieves all entries from the timesheet table
-func GetAllTimesheetEntries() ([]TimesheetEntry, error) {
-	rows, err := db.Query("SELECT t.id, t.date, c.client_name, t.client_hours, t.vacation_hours, t.idle_hours, t.training_hours, " +
+// GetAllTimesheetEntries retrieves entries from the timesheet table
+// If year and month are provided (non-zero), it filters entries for that specific month
+func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error) {
+	var query string
+	var args []any
+
+	baseQuery := "SELECT t.id, t.date, c.client_name, t.client_hours, t.vacation_hours, t.idle_hours, t.training_hours, " +
 		"(t.client_hours + t.vacation_hours + t.idle_hours + t.training_hours) AS total_hours " +
-		"FROM timesheet t JOIN clients c ON t.client_id = c.client_id")
+		"FROM timesheet t JOIN clients c ON t.client_id = c.client_id"
+
+	if year != 0 && month != 0 {
+		// Filter by specific month and year
+		startDate := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		endDate := time.Date(year, month+1, 0, 23, 59, 59, 999999999, time.UTC).Format("2006-01-02")
+
+		query = baseQuery + " WHERE t.date BETWEEN ? AND ?"
+		args = []any{startDate, endDate}
+	} else {
+		// Get all entries
+		query = baseQuery
+	}
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +77,8 @@ func GetAllTimesheetEntries() ([]TimesheetEntry, error) {
 	var entries []TimesheetEntry
 	for rows.Next() {
 		var entry TimesheetEntry
-		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours, &entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Total_hours); err != nil {
+		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours,
+			&entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Total_hours); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)

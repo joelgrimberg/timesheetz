@@ -111,7 +111,7 @@ func StartServer(p *tea.Program) {
 	})
 
 	router.GET("/api/all", func(c *gin.Context) {
-		entries, err := db.GetAllTimesheetEntries()
+		entries, err := db.GetAllTimesheetEntries(0, 0)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve timesheet entries"})
 			return

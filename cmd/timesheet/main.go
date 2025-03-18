@@ -50,14 +50,7 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("down", "j"),
 			key.WithHelp("↓/j", "move down"),
 		),
-		Left: key.NewBinding(
-			key.WithKeys("left"),
-			key.WithHelp("←", "move left"),
-		),
-		Right: key.NewBinding(
-			key.WithKeys("right"),
-			key.WithHelp("→", "move right"),
-		),
+
 		GotoToday: key.NewBinding(
 			key.WithKeys("t"),
 			key.WithHelp("t", "go to today"),
@@ -75,11 +68,11 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("enter", "select entry"),
 		),
 		PrevMonth: key.NewBinding(
-			key.WithKeys("h"),
+			key.WithKeys("left", "h"),
 			key.WithHelp("h", "previous month"),
 		),
 		NextMonth: key.NewBinding(
-			key.WithKeys("l"),
+			key.WithKeys("right", "l"),
 			key.WithHelp("l", "next month"),
 		),
 	}
@@ -101,91 +94,30 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 }
 
 type model struct {
-	table    table.Model
-	keys     KeyMap
-	help     help.Model
-	showHelp bool
-	ShowAll  bool
+	table        table.Model
+	keys         KeyMap
+	help         help.Model
+	showHelp     bool
+	ShowAll      bool
+	currentYear  int
+	currentMonth time.Month
 }
 
-func (m model) Init() tea.Cmd {
-	return nil
+// Custom message for changing the current month
+type ChangeMonthMsg struct {
+	Year  int
+	Month time.Month
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch {
-		case key.Matches(msg, m.keys.Help):
-			m.showHelp = !m.showHelp
-			return m, nil
-
-		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
-
-		case key.Matches(msg, m.keys.GotoToday):
-			// Find today's date in the table and select it
-			today := time.Now().Format("2006-01-02")
-			for i, row := range m.table.Rows() {
-				if row[0] == today {
-					m.table.SetCursor(i)
-					break
-				}
-			}
-			return m, nil
-
-		case key.Matches(msg, m.keys.Enter):
-			return m, tea.Printf("Selected: %s", m.table.SelectedRow()[0])
-
-		case key.Matches(msg, m.keys.PrevMonth):
-			// Functionality to be implemented later
-			return m, tea.Printf("Previous month")
-
-		case key.Matches(msg, m.keys.NextMonth):
-			// Functionality to be implemented later
-			return m, tea.Printf("Next month")
-		}
-	}
-
-	// Handle table navigation
-	m.table, cmd = m.table.Update(msg)
-	return m, cmd
-}
-
-func (m model) View() string {
-	var s string
-	s = baseStyle.Render(m.table.View()) + "\n"
-
-	if m.showHelp {
-		// Full help view
-		s += m.help.FullHelpView(m.keys.FullHelp())
-	} else {
-		// Short help view
-		s += helpStyle.Render(m.help.ShortHelpView(m.keys.ShortHelp()))
-	}
-
-	return s
-}
-
-func initDatabase() {
-	dbUser, dbPassword := GetDBCredentials()
-	if dbUser == "" || dbPassword == "" {
-		fmt.Println("Error: Database username or password is empty")
-		os.Exit(1)
-	}
-
-	err := db.Connect(dbUser, dbPassword)
-	if err != nil {
-		log.Fatalf("Failed to connect to the database: %v", err)
+// Command to change the month
+func changeMonth(year int, month time.Month) tea.Cmd {
+	return func() tea.Msg {
+		return ChangeMonthMsg{Year: year, Month: month}
 	}
 }
 
-func main() {
-	initDatabase()
-	defer db.Close()
-
+// Generate table for a specific month
+func generateMonthTable(year int, month time.Month) (table.Model, error) {
 	columns := []table.Column{
 		{Title: "Date", Width: 12},
 		{Title: "Day", Width: 10},
@@ -194,11 +126,10 @@ func main() {
 		{Title: "Total", Width: 10},
 	}
 
-	// Fetch all timesheet entries
-	entries, err := db.GetAllTimesheetEntries()
+	// Fetch timesheet entries for the specified month
+	entries, err := db.GetAllTimesheetEntries(year, month)
 	if err != nil {
-		log.Printf("Error fetching timesheet entries: %v", err)
-		// Continue with empty table if there's an error
+		return table.Model{}, fmt.Errorf("error fetching timesheet entries: %v", err)
 	}
 
 	// Create a map of entries by date for faster lookup
@@ -207,8 +138,7 @@ func main() {
 		entriesByDate[entry.Date] = entry
 	}
 
-	// Generate all days in March 2025
-	year, month := 2025, time.March
+	// Generate all days in the specified month
 	firstDay := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
 	lastDay := time.Date(year, month+1, 0, 0, 0, 0, 0, time.Local)
 
@@ -264,15 +194,157 @@ func main() {
 		Bold(false)
 	t.SetStyles(s)
 
+	return t, nil
+}
+
+func (m model) Init() tea.Cmd {
+	return nil
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case ChangeMonthMsg:
+		// Update the current year and month in the model
+		m.currentYear = msg.Year
+		m.currentMonth = msg.Month
+
+		// Generate a new table for the selected month
+		newTable, err := generateMonthTable(msg.Year, msg.Month)
+		if err != nil {
+			return m, tea.Printf("Error: %v", err)
+		}
+
+		m.table = newTable
+		return m, nil
+
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Help):
+			m.showHelp = !m.showHelp
+			return m, nil
+
+		case key.Matches(msg, m.keys.Quit):
+			return m, tea.Quit
+
+		case key.Matches(msg, m.keys.GotoToday):
+			// Get today's date
+			now := time.Now()
+
+			// If we're already in the current month, just highlight today's row
+			if now.Year() == m.currentYear && now.Month() == m.currentMonth {
+				today := now.Format("2006-01-02")
+				for i, row := range m.table.Rows() {
+					if row[0] == today {
+						m.table.SetCursor(i)
+						break
+					}
+				}
+				return m, nil
+			}
+
+			// Otherwise, change to the current month
+			return m, changeMonth(now.Year(), now.Month())
+
+		case key.Matches(msg, m.keys.Enter):
+			return m, tea.Printf("Selected: %s", m.table.SelectedRow()[0])
+
+		case key.Matches(msg, m.keys.PrevMonth):
+			// Calculate the previous month
+			prevYear, prevMonth := m.currentYear, m.currentMonth-1
+			if prevMonth < time.January {
+				prevMonth = time.December
+				prevYear--
+			}
+			return m, changeMonth(prevYear, prevMonth)
+
+		case key.Matches(msg, m.keys.NextMonth):
+			// Don't allow navigating past the current month
+			now := time.Now()
+
+			// If we're already at the current month or beyond, don't go further
+			if (m.currentYear > now.Year()) ||
+				(m.currentYear == now.Year() && m.currentMonth >= now.Month()) {
+				return m, nil
+			}
+
+			// Calculate the next month
+			nextYear, nextMonth := m.currentYear, m.currentMonth+1
+			if nextMonth > time.December {
+				nextMonth = time.January
+				nextYear++
+			}
+
+			// Only proceed if we're not going past the current month
+			if (nextYear < now.Year()) ||
+				(nextYear == now.Year() && nextMonth <= now.Month()) {
+				return m, changeMonth(nextYear, nextMonth)
+			}
+
+			return m, nil
+		}
+	}
+
+	// Handle table navigation
+	m.table, cmd = m.table.Update(msg)
+	return m, cmd
+}
+
+func (m model) View() string {
+	var s string
+	// s = fmt.Sprintf("%s %d\n", m.currentMonth.String(), m.currentYear) // Display current month and year
+	s += baseStyle.Render(m.table.View()) + "\n"
+
+	if m.showHelp {
+		// Full help view
+		s += m.help.FullHelpView(m.keys.FullHelp())
+	} else {
+		// Short help view
+		s += helpStyle.Render(m.help.ShortHelpView(m.keys.ShortHelp()))
+	}
+
+	return s
+}
+
+func initDatabase() {
+	dbUser, dbPassword := GetDBCredentials()
+	if dbUser == "" || dbPassword == "" {
+		fmt.Println("Error: Database username or password is empty")
+		os.Exit(1)
+	}
+
+	err := db.Connect(dbUser, dbPassword)
+	if err != nil {
+		log.Fatalf("Failed to connect to the database: %v", err)
+	}
+}
+
+func main() {
+	initDatabase()
+	defer db.Close()
+
+	// Start with the current month
+	now := time.Now()
+	currentYear, currentMonth := now.Year(), now.Month()
+
+	// Generate initial table for the current month
+	t, err := generateMonthTable(currentYear, currentMonth)
+	if err != nil {
+		log.Fatalf("Error generating table: %v", err)
+	}
+
 	// Initialize help model
 	h := help.New()
 
 	// Create model with table and keymap
 	m := model{
-		table:    t,
-		keys:     DefaultKeyMap(),
-		help:     h,
-		showHelp: false,
+		table:        t,
+		keys:         DefaultKeyMap(),
+		help:         h,
+		showHelp:     false,
+		currentYear:  currentYear,
+		currentMonth: currentMonth,
 	}
 
 	if _, err := tea.NewProgram(m).Run(); err != nil {
