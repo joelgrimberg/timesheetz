@@ -44,6 +44,7 @@ type TimesheetEntry struct {
 	Idle_hours     int
 	Training_hours int
 	Total_hours    int
+	Notes          string // Added for future use
 }
 
 // GetAllTimesheetEntries retrieves entries from the timesheet table
@@ -91,6 +92,30 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 	return entries, nil
 }
 
+// GetTimesheetEntryByDate retrieves a single timesheet entry by date
+func GetTimesheetEntryByDate(date string) (TimesheetEntry, error) {
+	query := `SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours,
+             (client_hours + vacation_hours + idle_hours + training_hours) AS total_hours
+             FROM timesheet WHERE date = ?`
+
+	var entry TimesheetEntry
+	err := db.QueryRow(query, date).Scan(
+		&entry.Id,
+		&entry.Date,
+		&entry.Client_name,
+		&entry.Client_hours,
+		&entry.Vacation_hours,
+		&entry.Idle_hours,
+		&entry.Training_hours,
+		&entry.Total_hours,
+	)
+	if err != nil {
+		return TimesheetEntry{}, err
+	}
+
+	return entry, nil
+}
+
 func AddTimesheetEntry(entry TimesheetEntry) error {
 	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours)
               VALUES (?, ?, ?, ?, ?, ?)`
@@ -103,6 +128,36 @@ func AddTimesheetEntry(entry TimesheetEntry) error {
 		entry.Training_hours)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// UpdateTimesheetEntry updates an existing timesheet entry by date
+func UpdateTimesheetEntry(entry TimesheetEntry) error {
+	query := `UPDATE timesheet 
+              SET client_name = ?, client_hours = ?, 
+                  vacation_hours = ?, idle_hours = ?, training_hours = ? 
+              WHERE date = ?`
+
+	result, err := db.Exec(query,
+		entry.Client_name,
+		entry.Client_hours,
+		entry.Vacation_hours,
+		entry.Idle_hours,
+		entry.Training_hours,
+		entry.Date)
+	if err != nil {
+		return fmt.Errorf("failed to update record: %w", err)
+	}
+
+	// Check if any rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error checking rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("no entry found with date %s", entry.Date)
 	}
 
 	return nil
@@ -136,7 +191,7 @@ func PutTimesheetEntry(clientHours, vacationHours, idleHours, trainingHours floa
 	return id, nil
 }
 
-func UpdateTimesheetEntry(id string, data map[string]any) error {
+func UpdateTimesheetEntryById(id string, data map[string]any) error {
 	// Validate allowed fields to prevent SQL injection
 	allowedFields := map[string]bool{
 		"client_hours":   true,

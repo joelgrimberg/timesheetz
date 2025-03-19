@@ -184,7 +184,8 @@ func StartServer(p *tea.Program) {
 		}
 
 		// Call the UpdateTimesheetEntry function
-		err := db.UpdateTimesheetEntry(id, updates)
+
+		err := db.UpdateTimesheetEntryById(id, updates)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update timesheet entry: " + err.Error()})
 			return

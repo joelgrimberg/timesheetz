@@ -31,7 +31,15 @@ const (
 	dateField = iota
 	clientField
 	clientHoursField
+	trainingHoursField
+	vacationHoursField
+	idleHoursField
 )
+
+// Add to your message types
+type EditEntryMsg struct {
+	Date string
+}
 
 // Styles
 var (
@@ -84,6 +92,26 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.FormView = InitialFormModel()
 				return m, m.FormView.Init()
 			}
+		}
+
+		// Handle edit entry message
+		if editMsg, ok := msg.(EditEntryMsg); ok {
+			// Switch to form mode for editing
+			m.Mode = FormMode
+
+			// Initialize the form for editing
+			date := editMsg.Date
+			m.FormView = InitialFormModelWithDate(date)
+
+			// Try to load existing data
+			entry, err := db.GetTimesheetEntryByDate(date)
+			if err == nil {
+				// Entry found, populate form fields
+				m.FormView.prefillFromEntry(entry)
+				m.FormView.isEditing = true
+			}
+
+			return m, m.FormView.Init()
 		}
 
 		// Otherwise update timesheet view
@@ -213,14 +241,15 @@ type TimesheetModel struct {
 
 // ChangeMonthMsg is used to change the month
 type ChangeMonthMsg struct {
-	Year  int
-	Month time.Month
+	Year       int
+	Month      time.Month
+	SelectDate string // Optional date to select after changing month
 }
 
-// Command to change the month
-func ChangeMonth(year int, month time.Month) tea.Cmd {
+// Command to change the month with optional date selection
+func ChangeMonth(year int, month time.Month, selectDate string) tea.Cmd {
 	return func() tea.Msg {
-		return ChangeMonthMsg{Year: year, Month: month}
+		return ChangeMonthMsg{Year: year, Month: month, SelectDate: selectDate}
 	}
 }
 
@@ -253,7 +282,7 @@ func (m TimesheetModel) Init() tea.Cmd {
 
 // RefreshCmd refreshes the timesheet data
 func (m TimesheetModel) RefreshCmd() tea.Cmd {
-	return ChangeMonth(m.currentYear, m.currentMonth)
+	return ChangeMonth(m.currentYear, m.currentMonth, "")
 }
 
 func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -272,6 +301,17 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.table = newTable
+
+		// If a specific date was requested, try to select it
+		if msg.SelectDate != "" {
+			for i, row := range m.table.Rows() {
+				if row[0] == msg.SelectDate {
+					m.table.SetCursor(i)
+					break
+				}
+			}
+		}
+
 		return m, nil
 
 	case tea.KeyMsg:
@@ -286,24 +326,17 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.GotoToday):
 			// Get today's date
 			now := time.Now()
+			today := now.Format("2006-01-02")
 
-			// If we're already in the current month, just highlight today's row
-			if now.Year() == m.currentYear && now.Month() == m.currentMonth {
-				today := now.Format("2006-01-02")
-				for i, row := range m.table.Rows() {
-					if row[0] == today {
-						m.table.SetCursor(i)
-						break
-					}
-				}
-				return m, nil
-			}
-
-			// Otherwise, change to the current month
-			return m, ChangeMonth(now.Year(), now.Month())
+			// Always go to today's date, regardless of which month we're in
+			return m, ChangeMonth(now.Year(), now.Month(), today)
 
 		case key.Matches(msg, m.keys.Enter):
-			return m, tea.Printf("Selected: %s", m.table.SelectedRow()[0])
+			// Get the date from the selected row
+			selectedDate := m.table.SelectedRow()[0]
+			return m, func() tea.Msg {
+				return EditEntryMsg{Date: selectedDate}
+			}
 
 		case key.Matches(msg, m.keys.PrevMonth):
 			// Calculate the previous month
@@ -312,7 +345,7 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prevMonth = time.December
 				prevYear--
 			}
-			return m, ChangeMonth(prevYear, prevMonth)
+			return m, ChangeMonth(prevYear, prevMonth, "")
 
 		case key.Matches(msg, m.keys.NextMonth):
 			// Don't allow navigating past the current month
@@ -334,7 +367,7 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Only proceed if we're not going past the current month
 			if (nextYear < now.Year()) ||
 				(nextYear == now.Year() && nextMonth <= now.Month()) {
-				return m, ChangeMonth(nextYear, nextMonth)
+				return m, ChangeMonth(nextYear, nextMonth, "")
 			}
 
 			return m, nil
@@ -370,6 +403,9 @@ func generateMonthTable(year int, month time.Month) (table.Model, error) {
 		{Title: "Day", Width: 10},
 		{Title: "Client", Width: 20},
 		{Title: "Hours", Width: 10},
+		{Title: "Training", Width: 10},
+		{Title: "Vacation", Width: 10},
+		{Title: "Idle", Width: 10},
 		{Title: "Total", Width: 10},
 	}
 
@@ -398,12 +434,18 @@ func generateMonthTable(year int, month time.Month) (table.Model, error) {
 		// Default values for days without entries
 		clientName := "-"
 		clientHours := "-"
+		training := "-"
+		vacation := "-"
+		idle := "-"
 		totalHours := "-"
 
 		// If we have an entry for this date, use its data
 		if entry, exists := entriesByDate[dateStr]; exists {
 			clientName = entry.Client_name
 			clientHours = fmt.Sprintf("%d", entry.Client_hours)
+			training = fmt.Sprintf("%d", entry.Training_hours)
+			vacation = fmt.Sprintf("%d", entry.Vacation_hours)
+			idle = fmt.Sprintf("%d", entry.Idle_hours)
 			totalHours = fmt.Sprintf("%d", entry.Total_hours)
 		}
 
@@ -417,6 +459,9 @@ func generateMonthTable(year int, month time.Month) (table.Model, error) {
 			weekday,
 			clientName,
 			clientHours,
+			training,
+			vacation,
+			idle,
 			totalHours,
 		}
 		rows = append(rows, row)
@@ -453,6 +498,7 @@ type FormModel struct {
 	err        error
 	successMsg string
 	submitted  bool
+	isEditing  bool // True when editing an existing entry
 }
 
 func InitialFormModel() FormModel {
@@ -460,7 +506,7 @@ func InitialFormModel() FormModel {
 	today := time.Now().Format("2006-01-02")
 
 	// Create the input fields
-	inputs := make([]textinput.Model, 3)
+	inputs := make([]textinput.Model, 6)
 
 	inputs[dateField] = textinput.New()
 	inputs[dateField].Placeholder = "YYYY-MM-DD"
@@ -484,10 +530,48 @@ func InitialFormModel() FormModel {
 	inputs[clientHoursField].Prompt = ""
 	inputs[clientHoursField].Validate = validateHours
 
+	inputs[trainingHoursField] = textinput.New()
+	inputs[trainingHoursField].Placeholder = "8"
+	inputs[trainingHoursField].CharLimit = 5
+	inputs[trainingHoursField].Width = 10
+	inputs[trainingHoursField].Prompt = ""
+	inputs[trainingHoursField].Validate = validateHours
+
+	inputs[vacationHoursField] = textinput.New()
+	inputs[vacationHoursField].Placeholder = "8"
+	inputs[vacationHoursField].CharLimit = 5
+	inputs[vacationHoursField].Width = 10
+	inputs[vacationHoursField].Prompt = ""
+	inputs[vacationHoursField].Validate = validateHours
+
+	inputs[idleHoursField] = textinput.New()
+	inputs[idleHoursField].Placeholder = "8"
+	inputs[idleHoursField].CharLimit = 5
+	inputs[idleHoursField].Width = 10
+	inputs[idleHoursField].Prompt = ""
+	inputs[idleHoursField].Validate = validateHours
+
 	return FormModel{
 		inputs:  inputs,
 		focused: 0,
 	}
+}
+
+// InitialFormModelWithDate creates a form model with a specific date
+func InitialFormModelWithDate(date string) FormModel {
+	form := InitialFormModel()
+	form.inputs[dateField].SetValue(date)
+	return form
+}
+
+// prefillFromEntry populates the form with data from an existing entry
+func (m *FormModel) prefillFromEntry(entry db.TimesheetEntry) {
+	m.inputs[dateField].SetValue(entry.Date)
+	m.inputs[clientField].SetValue(entry.Client_name)
+	m.inputs[clientHoursField].SetValue(strconv.Itoa(entry.Client_hours))
+	m.inputs[trainingHoursField].SetValue(strconv.Itoa(entry.Training_hours))
+	m.inputs[vacationHoursField].SetValue(strconv.Itoa(entry.Vacation_hours))
+	m.inputs[idleHoursField].SetValue(strconv.Itoa(entry.Idle_hours))
 }
 
 func (m FormModel) Init() tea.Cmd {
@@ -513,7 +597,11 @@ func (m FormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// Show success message
 				m.submitted = true
-				m.successMsg = "Entry added successfully!"
+				if m.isEditing {
+					m.successMsg = "Entry updated successfully!"
+				} else {
+					m.successMsg = "Entry added successfully!"
+				}
 
 				// Return to timesheet view after a brief delay
 				return m, tea.Sequence(
@@ -580,7 +668,11 @@ func (m FormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m FormModel) View() string {
 	var view string
 
-	view += titleStyle.Render("Add Timesheet Entry") + "\n\n"
+	if m.isEditing {
+		view += titleStyle.Render("Edit Timesheet Entry") + "\n\n"
+	} else {
+		view += titleStyle.Render("Add Timesheet Entry") + "\n\n"
+	}
 
 	view += inputStyle.Render("Date (YYYY-MM-DD):") + "\n"
 	view += m.inputs[dateField].View() + "\n\n"
@@ -590,6 +682,15 @@ func (m FormModel) View() string {
 
 	view += inputStyle.Render("Client Hours:") + "\n"
 	view += m.inputs[clientHoursField].View() + "\n\n"
+
+	view += inputStyle.Render("Training Hours:") + "\n"
+	view += m.inputs[trainingHoursField].View() + "\n\n"
+
+	view += inputStyle.Render("Vacation Hours:") + "\n"
+	view += m.inputs[vacationHoursField].View() + "\n\n"
+
+	view += inputStyle.Render("Idle Hours:") + "\n"
+	view += m.inputs[idleHoursField].View() + "\n\n"
 
 	if !m.submitted {
 		view += buttonStyle.Render("Press Enter to submit • Esc to cancel") + "\n"
@@ -611,35 +712,59 @@ func (m FormModel) submitForm() error {
 	if m.inputs[dateField].Value() == "" {
 		return fmt.Errorf("date is required")
 	}
-	if m.inputs[clientField].Value() == "" {
-		return fmt.Errorf("client is required")
-	}
-	if m.inputs[clientHoursField].Value() == "" {
-		return fmt.Errorf("client hours are required")
-	}
 
 	// Parse values
 	date := m.inputs[dateField].Value()
 	client := m.inputs[clientField].Value()
 	clientHoursStr := m.inputs[clientHoursField].Value()
 
+	trainingHoursStr := m.inputs[trainingHoursField].Value()
+	vacationHoursStr := m.inputs[vacationHoursField].Value()
+	idleHoursStr := m.inputs[idleHoursField].Value()
+
 	clientHours, err := strconv.Atoi(clientHoursStr)
 	if err != nil {
 		return fmt.Errorf("invalid client hours: %v", err)
 	}
 
-	// Create the timesheet entry
-	entry := db.TimesheetEntry{
-		Date:         date,
-		Client_name:  client,
-		Client_hours: clientHours,
-		Total_hours:  clientHours, // Default total hours to client hours
+	trainingHours, err := strconv.Atoi(trainingHoursStr)
+	if err != nil {
+		return fmt.Errorf("invalid training hours: %v", err)
 	}
 
-	// Save to database
-	err = db.AddTimesheetEntry(entry)
+	vacationHours, err := strconv.Atoi(vacationHoursStr)
 	if err != nil {
-		return fmt.Errorf("failed to save entry: %v", err)
+		return fmt.Errorf("invalid vacation hours: %v", err)
+	}
+
+	idleHours, err := strconv.Atoi(idleHoursStr)
+	if err != nil {
+		return fmt.Errorf("invalid idle hours: %v", err)
+	}
+
+	// Create the timesheet entry
+	entry := db.TimesheetEntry{
+		Date:           date,
+		Client_name:    client,
+		Client_hours:   clientHours,
+		Training_hours: trainingHours,
+		Vacation_hours: vacationHours,
+		Idle_hours:     idleHours,
+
+		// Total_hours:  clientHours, // Default total hours to client hours
+	}
+
+	// Save to database - either update or add
+	if m.isEditing {
+		err = db.UpdateTimesheetEntry(entry)
+		if err != nil {
+			return fmt.Errorf("failed to update entry: %v", err)
+		}
+	} else {
+		err = db.AddTimesheetEntry(entry)
+		if err != nil {
+			return fmt.Errorf("failed to save entry: %v", err)
+		}
 	}
 
 	return nil
