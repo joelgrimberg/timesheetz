@@ -37,3 +37,4 @@ make dev
 - [x] fix api server
 - [ ] Build application in pipeline
 - [ ] Create installer for database
+- [ ] Add RayCast extension
