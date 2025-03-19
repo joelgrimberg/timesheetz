@@ -1,5 +1,22 @@
 # Readme
 
+## Description
+
+A simple application to track the hours worked, written in go, using a MySQL
+database.
+
+## Installation
+
+TODO: Add installation instructions
+
+## Usage
+
+Run the application as a TUI with the following command:
+
+```bash
+make dev
+```
+
 ## TODO
 
 - [x] Build Table setup
@@ -15,6 +32,6 @@
 - [x] Create edit form
 - [x] Add all database fields to insert form
 - [x] Add all database fields to table
-- [ ] fix api server
+- [x] fix api server
 - [ ] Build application in pipeline
 - [ ] Create installer for database

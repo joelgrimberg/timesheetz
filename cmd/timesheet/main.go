@@ -814,6 +814,7 @@ func initDatabase() {
 }
 
 func main() {
+	// Initialize the database first
 	initDatabase()
 	defer db.Close()
 
@@ -823,14 +824,20 @@ func main() {
 		TimesheetView: InitialTimesheetModel(),
 	}
 
-	// Run the program
+	// Start API server in a goroutine before running the UI
+	go func() {
+		fmt.Println("Starting API server...")
+		apiP := tea.NewProgram(AppModel{})
+		handler.StartServer(apiP)
+	}()
+
+	// Give the API server a moment to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Run the UI program
 	p := tea.NewProgram(app)
 	if _, err := p.Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
 	}
-
-	// API server (this won't be reached during normal operation)
-	apiP := tea.NewProgram(AppModel{})
-	go handler.StartServer(apiP)
 }
