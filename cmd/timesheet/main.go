@@ -170,6 +170,8 @@ type TimesheetKeyMap struct {
 	PrevMonth key.Binding
 	NextMonth key.Binding
 	AddEntry  key.Binding
+	JumpUp    key.Binding
+	JumpDown  key.Binding
 }
 
 // Default keybindings for the timesheet view
@@ -211,6 +213,12 @@ func DefaultTimesheetKeyMap() TimesheetKeyMap {
 			key.WithKeys("a"),
 			key.WithHelp("a", "add entry"),
 		),
+		JumpUp: key.NewBinding(
+			key.WithKeys("u"),
+			key.WithHelp("u", "jump up")),
+		JumpDown: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "jump down")),
 	}
 }
 
@@ -222,10 +230,10 @@ func (k TimesheetKeyMap) ShortHelp() []key.Binding {
 // FullHelp returns keybindings for the expanded help view.
 func (k TimesheetKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Left, k.Right},    // first column
-		{k.PrevMonth, k.NextMonth},         // second column - month navigation
-		{k.GotoToday, k.Enter, k.AddEntry}, // third column
-		{k.Help, k.Quit},                   // fourth column
+		{k.Up, k.Down, k.Left, k.Right, k.JumpUp, k.JumpDown}, // first column
+		{k.PrevMonth, k.NextMonth},                            // second column - month navigation
+		{k.GotoToday, k.Enter, k.AddEntry},                    // third column
+		{k.Help, k.Quit},                                      // fourth column
 	}
 }
 
