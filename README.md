@@ -5,6 +5,8 @@
 A simple application to track the hours worked, written in go, using a MySQL
 database.
 
+Documentation regarding the api can be found [here](./api/README.md)
+
 ## Installation
 
 TODO: Add installation instructions
