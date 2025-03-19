@@ -51,6 +51,8 @@ var (
 	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	buttonStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
 	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
+	footerStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
+	weekendStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Dimmer style for weekends
 )
 
 // ==================== TOP LEVEL APPLICATION MODEL ====================
@@ -159,19 +161,20 @@ func ReturnToTimesheet() tea.Cmd {
 
 // Key bindings
 type TimesheetKeyMap struct {
-	Up        key.Binding
-	Down      key.Binding
-	Left      key.Binding
-	Right     key.Binding
-	GotoToday key.Binding
-	Help      key.Binding
-	Quit      key.Binding
-	Enter     key.Binding
-	PrevMonth key.Binding
-	NextMonth key.Binding
-	AddEntry  key.Binding
-	JumpUp    key.Binding
-	JumpDown  key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	Left       key.Binding
+	Right      key.Binding
+	GotoToday  key.Binding
+	Help       key.Binding
+	Quit       key.Binding
+	Enter      key.Binding
+	PrevMonth  key.Binding
+	NextMonth  key.Binding
+	AddEntry   key.Binding
+	JumpUp     key.Binding
+	JumpDown   key.Binding
+	ClearEntry key.Binding
 }
 
 // Default keybindings for the timesheet view
@@ -219,12 +222,15 @@ func DefaultTimesheetKeyMap() TimesheetKeyMap {
 		JumpDown: key.NewBinding(
 			key.WithKeys("d"),
 			key.WithHelp("d", "jump down")),
+		ClearEntry: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "clear entry")),
 	}
 }
 
 // ShortHelp returns keybindings to be shown in the mini help view.
 func (k TimesheetKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.GotoToday, k.AddEntry, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.GotoToday, k.AddEntry, k.ClearEntry, k.Help, k.Quit}
 }
 
 // FullHelp returns keybindings for the expanded help view.
@@ -232,8 +238,8 @@ func (k TimesheetKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right, k.JumpUp, k.JumpDown}, // first column
 		{k.PrevMonth, k.NextMonth},                            // second column - month navigation
-		{k.GotoToday, k.Enter, k.AddEntry},                    // third column
-		{k.Help, k.Quit},                                      // fourth column
+		{k.GotoToday, k.Enter, k.AddEntry, k.ClearEntry},      // third column
+		{k.Help, k.Quit}, // fourth column
 	}
 }
 
@@ -245,6 +251,8 @@ type TimesheetModel struct {
 	showHelp     bool
 	currentYear  int
 	currentMonth time.Month
+	cursorRow    int            // Track the current cursor position
+	columnTotals map[string]int // Store column sums
 }
 
 // ChangeMonthMsg is used to change the month
@@ -252,12 +260,21 @@ type ChangeMonthMsg struct {
 	Year       int
 	Month      time.Month
 	SelectDate string // Optional date to select after changing month
+	CursorRow  int    // Track cursor position
+	Preserve   bool   // Whether to preserve cursor position
 }
 
 // Command to change the month with optional date selection
 func ChangeMonth(year int, month time.Month, selectDate string) tea.Cmd {
 	return func() tea.Msg {
-		return ChangeMonthMsg{Year: year, Month: month, SelectDate: selectDate}
+		return ChangeMonthMsg{Year: year, Month: month, SelectDate: selectDate, Preserve: false}
+	}
+}
+
+// Command to refresh while preserving cursor position
+func RefreshPreservingCursor(year int, month time.Month, cursorRow int) tea.Cmd {
+	return func() tea.Msg {
+		return ChangeMonthMsg{Year: year, Month: month, CursorRow: cursorRow, Preserve: true}
 	}
 }
 
@@ -267,8 +284,8 @@ func InitialTimesheetModel() TimesheetModel {
 	now := time.Now()
 	currentYear, currentMonth := now.Year(), now.Month()
 
-	// Generate initial table
-	t, err := generateMonthTable(currentYear, currentMonth)
+	// Generate initial table and column totals
+	t, totals, err := generateMonthTable(currentYear, currentMonth)
 	if err != nil {
 		log.Fatalf("Error generating table: %v", err)
 	}
@@ -281,6 +298,8 @@ func InitialTimesheetModel() TimesheetModel {
 		showHelp:     false,
 		currentYear:  currentYear,
 		currentMonth: currentMonth,
+		cursorRow:    0,
+		columnTotals: totals,
 	}
 }
 
@@ -290,7 +309,11 @@ func (m TimesheetModel) Init() tea.Cmd {
 
 // RefreshCmd refreshes the timesheet data
 func (m TimesheetModel) RefreshCmd() tea.Cmd {
-	return ChangeMonth(m.currentYear, m.currentMonth, "")
+	// Get current cursor position
+	cursorRow := m.table.Cursor()
+
+	// Preserve cursor position when refreshing
+	return RefreshPreservingCursor(m.currentYear, m.currentMonth, cursorRow)
 }
 
 func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -302,20 +325,32 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentYear = msg.Year
 		m.currentMonth = msg.Month
 
-		// Generate a new table for the selected month
-		newTable, err := generateMonthTable(msg.Year, msg.Month)
+		// Generate a new table for the selected month and get column totals
+		newTable, totals, err := generateMonthTable(msg.Year, msg.Month)
 		if err != nil {
 			return m, tea.Printf("Error: %v", err)
 		}
 
 		m.table = newTable
+		m.columnTotals = totals
 
 		// If a specific date was requested, try to select it
 		if msg.SelectDate != "" {
 			for i, row := range m.table.Rows() {
 				if row[0] == msg.SelectDate {
 					m.table.SetCursor(i)
+					m.cursorRow = i
 					break
+				}
+			}
+		} else if msg.Preserve {
+			// If preserving cursor position
+			rowCount := len(m.table.Rows())
+			if rowCount > 0 {
+				// Make sure cursor position is valid
+				if msg.CursorRow >= 0 && msg.CursorRow < rowCount {
+					m.table.SetCursor(msg.CursorRow)
+					m.cursorRow = msg.CursorRow
 				}
 			}
 		}
@@ -345,6 +380,19 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				return EditEntryMsg{Date: selectedDate}
 			}
+
+		case key.Matches(msg, m.keys.ClearEntry):
+			// Get the date from the selected row
+			selectedDate := m.table.SelectedRow()[0]
+			// Remember current cursor position
+			cursorRow := m.table.Cursor()
+			// Delete the entry
+			err := db.DeleteTimesheetEntryByDate(selectedDate)
+			if err != nil {
+				return m, tea.Printf("Error clearing entry: %v", err)
+			}
+			// Refresh the table but maintain cursor position
+			return m, RefreshPreservingCursor(m.currentYear, m.currentMonth, cursorRow)
 
 		case key.Matches(msg, m.keys.PrevMonth):
 			// Calculate the previous month
@@ -383,6 +431,8 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle table navigation
 		m.table, cmd = m.table.Update(msg)
+		// Store the current cursor position
+		m.cursorRow = m.table.Cursor()
 		return m, cmd
 	}
 
@@ -391,7 +441,24 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m TimesheetModel) View() string {
 	var s string
+
+	// Show the month and year as title
+	monthYearTitle := fmt.Sprintf("%s %d", m.currentMonth.String(), m.currentYear)
+	s += titleStyle.Render(monthYearTitle) + "\n\n"
+
+	// Render the table
 	s += baseStyle.Render(m.table.View()) + "\n"
+
+	// Render the footer with totals
+	// Render the footer with totals
+	footerContent := fmt.Sprintf("%-12s %-10s %-20s", "Total:", "", "")
+	footerContent += fmt.Sprintf("      %d", m.columnTotals["clientHours"])
+	footerContent += fmt.Sprintf("           %d", m.columnTotals["trainingHours"])
+	footerContent += fmt.Sprintf("           %d", m.columnTotals["vacationHours"])
+	footerContent += fmt.Sprintf("           %d", m.columnTotals["idleHours"])
+	footerContent += fmt.Sprintf("           %d", m.columnTotals["totalHours"])
+
+	s += footerStyle.Render(footerContent) + "\n\n"
 
 	if m.showHelp {
 		// Full help view
@@ -405,7 +472,7 @@ func (m TimesheetModel) View() string {
 }
 
 // Generate table for a specific month
-func generateMonthTable(year int, month time.Month) (table.Model, error) {
+func generateMonthTable(year int, month time.Month) (table.Model, map[string]int, error) {
 	columns := []table.Column{
 		{Title: "Date", Width: 12},
 		{Title: "Day", Width: 10},
@@ -417,16 +484,32 @@ func generateMonthTable(year int, month time.Month) (table.Model, error) {
 		{Title: "Total", Width: 10},
 	}
 
+	// Initialize column totals
+	columnTotals := map[string]int{
+		"clientHours":   0,
+		"trainingHours": 0,
+		"vacationHours": 0,
+		"idleHours":     0,
+		"totalHours":    0,
+	}
+
 	// Fetch timesheet entries for the specified month
 	entries, err := db.GetAllTimesheetEntries(year, month)
 	if err != nil {
-		return table.Model{}, fmt.Errorf("error fetching timesheet entries: %v", err)
+		return table.Model{}, columnTotals, fmt.Errorf("error fetching timesheet entries: %v", err)
 	}
 
 	// Create a map of entries by date for faster lookup
 	entriesByDate := make(map[string]db.TimesheetEntry)
 	for _, entry := range entries {
 		entriesByDate[entry.Date] = entry
+
+		// Add to totals
+		columnTotals["clientHours"] += entry.Client_hours
+		columnTotals["trainingHours"] += entry.Training_hours
+		columnTotals["vacationHours"] += entry.Vacation_hours
+		columnTotals["idleHours"] += entry.Idle_hours
+		columnTotals["totalHours"] += entry.Total_hours
 	}
 
 	// Generate all days in the specified month
@@ -479,7 +562,7 @@ func generateMonthTable(year int, month time.Month) (table.Model, error) {
 		table.WithColumns(columns),
 		table.WithRows(rows),
 		table.WithFocused(true),
-		table.WithHeight(31), // Height to show entire month
+		table.WithHeight(31), // Reduced height slightly to make room for footer
 	)
 
 	s := table.DefaultStyles()
@@ -494,7 +577,7 @@ func generateMonthTable(year int, month time.Month) (table.Model, error) {
 		Bold(false)
 	t.SetStyles(s)
 
-	return t, nil
+	return t, columnTotals, nil
 }
 
 // ==================== FORM MODEL ====================
@@ -724,30 +807,48 @@ func (m FormModel) submitForm() error {
 	// Parse values
 	date := m.inputs[dateField].Value()
 	client := m.inputs[clientField].Value()
+
+	// Set default values for empty fields
+	clientHours := 0
+	trainingHours := 0
+	vacationHours := 0
+	idleHours := 0
+
+	// Only try to convert non-empty strings
 	clientHoursStr := m.inputs[clientHoursField].Value()
+	if clientHoursStr != "" {
+		var err error
+		clientHours, err = strconv.Atoi(clientHoursStr)
+		if err != nil {
+			return fmt.Errorf("invalid client hours: %v", err)
+		}
+	}
 
 	trainingHoursStr := m.inputs[trainingHoursField].Value()
+	if trainingHoursStr != "" {
+		var err error
+		trainingHours, err = strconv.Atoi(trainingHoursStr)
+		if err != nil {
+			return fmt.Errorf("invalid training hours: %v", err)
+		}
+	}
+
 	vacationHoursStr := m.inputs[vacationHoursField].Value()
+	if vacationHoursStr != "" {
+		var err error
+		vacationHours, err = strconv.Atoi(vacationHoursStr)
+		if err != nil {
+			return fmt.Errorf("invalid vacation hours: %v", err)
+		}
+	}
+
 	idleHoursStr := m.inputs[idleHoursField].Value()
-
-	clientHours, err := strconv.Atoi(clientHoursStr)
-	if err != nil {
-		return fmt.Errorf("invalid client hours: %v", err)
-	}
-
-	trainingHours, err := strconv.Atoi(trainingHoursStr)
-	if err != nil {
-		return fmt.Errorf("invalid training hours: %v", err)
-	}
-
-	vacationHours, err := strconv.Atoi(vacationHoursStr)
-	if err != nil {
-		return fmt.Errorf("invalid vacation hours: %v", err)
-	}
-
-	idleHours, err := strconv.Atoi(idleHoursStr)
-	if err != nil {
-		return fmt.Errorf("invalid idle hours: %v", err)
+	if idleHoursStr != "" {
+		var err error
+		idleHours, err = strconv.Atoi(idleHoursStr)
+		if err != nil {
+			return fmt.Errorf("invalid idle hours: %v", err)
+		}
 	}
 
 	// Create the timesheet entry
@@ -758,18 +859,17 @@ func (m FormModel) submitForm() error {
 		Training_hours: trainingHours,
 		Vacation_hours: vacationHours,
 		Idle_hours:     idleHours,
-
-		// Total_hours:  clientHours, // Default total hours to client hours
+		Total_hours:    clientHours + trainingHours + vacationHours + idleHours,
 	}
 
 	// Save to database - either update or add
 	if m.isEditing {
-		err = db.UpdateTimesheetEntry(entry)
+		err := db.UpdateTimesheetEntry(entry)
 		if err != nil {
 			return fmt.Errorf("failed to update entry: %v", err)
 		}
 	} else {
-		err = db.AddTimesheetEntry(entry)
+		err := db.AddTimesheetEntry(entry)
 		if err != nil {
 			return fmt.Errorf("failed to save entry: %v", err)
 		}

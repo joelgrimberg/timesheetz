@@ -243,6 +243,24 @@ func UpdateTimesheetEntryById(id string, data map[string]any) error {
 	return nil
 }
 
+// DeleteTimesheetEntryByDate removes a timesheet entry by its date
+func DeleteTimesheetEntryByDate(date string) error {
+	// Use prepared statement to prevent SQL injection
+	stmt, err := db.Prepare("DELETE FROM timesheet WHERE date = ?")
+	if err != nil {
+		return fmt.Errorf("failed to prepare delete statement: %w", err)
+	}
+	defer stmt.Close()
+
+	// Execute the statement
+	_, err = stmt.Exec(date)
+	if err != nil {
+		return fmt.Errorf("failed to delete record: %w", err)
+	}
+
+	return nil
+}
+
 // DeleteTimesheetEntry removes a timesheet entry by its ID
 func DeleteTimesheetEntry(id string) error {
 	// Use prepared statement to prevent SQL injection
