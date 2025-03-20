@@ -444,7 +444,7 @@ func (m TimesheetModel) View() string {
 
 	// Show the month and year as title
 	monthYearTitle := fmt.Sprintf("%s %d", m.currentMonth.String(), m.currentYear)
-	s += titleStyle.Render(monthYearTitle) + "\n\n"
+	s += titleStyle.Render(monthYearTitle) + "\n"
 
 	// Render the table
 	s += baseStyle.Render(m.table.View()) + "\n"
