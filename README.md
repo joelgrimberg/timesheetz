@@ -1,5 +1,7 @@
 # Readme
 
+<img src="docs/images/unicorn.jpg" height="150" />
+
 ## Description
 
 A simple application to track the hours worked, written in go, using a MySQL
@@ -11,7 +13,7 @@ Documentation regarding the api can be found [here](./api/README.md)
 
 '--init' will initialize the database with the correct tables
 
-TODO: Add installation instructions
+TODO: Add mysql installation instructions
 
 ## Usage
 
@@ -37,6 +39,7 @@ make dev
 - [x] Add all database fields to insert form
 - [x] Add all database fields to table
 - [x] fix api server
+- [ ] update Readme and setup github pages
 - [ ] Build application in pipeline
 - [ ] Create installer for database
 - [ ] Add RayCast extension
