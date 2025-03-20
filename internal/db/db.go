@@ -191,7 +191,6 @@ func GetTimesheetEntryByDate(date string) (TimesheetEntry, error) {
 func AddTimesheetEntry(entry TimesheetEntry) error {
 	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours)
               VALUES (?, ?, ?, ?, ?, ?)`
-	fmt.Println(query)
 	_, err := db.Exec(query,
 		entry.Date,
 		entry.Client_name,
