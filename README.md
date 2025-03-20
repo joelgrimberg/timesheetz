@@ -1,25 +1,26 @@
-# Readme
+# Timesheetz - A unicorny way to track your hours
 
 <img src="docs/images/unicorn.jpg" height="150" />
 
 ## Description
 
-A simple application to track the hours worked, written in go, using a MySQL
-database.
+A simple timesheet app , written in GO, using a MySQL database.
 
-Documentation regarding the api can be found [here](./api/README.md)
+Documentation regarding the api can be found [here](./docs/api.md)
 
 ## Installation
 
-'--init' will initialize the database with the correct tables
-
-TODO: Add mysql installation instructions
+'timesheet --init' will initialize the database
 
 ## Usage
 
-Run the application as a TUI with the following command:
+Run the application in dev mode as a TUI with the following command:
 
 ```bash
+
+export DBUSER="root"
+export DBPASSWORD="password"
+
 make dev
 ```
 
