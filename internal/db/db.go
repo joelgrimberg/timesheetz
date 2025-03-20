@@ -47,6 +47,78 @@ type TimesheetEntry struct {
 	Notes          string // Added for future use
 }
 
+// InitializeDatabase creates the database and tables if they don't exist
+func InitializeDatabase(user, password string) error {
+	// Connect to MySQL server without specifying a database
+	rootDSN := fmt.Sprintf("%s:%s@tcp(localhost:3306)/", user, password)
+	rootDB, err := sql.Open("mysql", rootDSN)
+	if err != nil {
+		return fmt.Errorf("failed to connect to MySQL: %w", err)
+	}
+	defer rootDB.Close()
+
+	// Check if database already exists
+	var dbExists bool
+	err = rootDB.QueryRow("SELECT COUNT(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = 'timesheet'").Scan(&dbExists)
+	if err != nil {
+		return fmt.Errorf("failed to check if database exists: %w", err)
+	}
+
+	if dbExists {
+		// Database exists, now check if table exists
+		if err = Connect(user, password); err != nil {
+			return fmt.Errorf("failed to connect to timesheet database: %w", err)
+		}
+		defer Close()
+
+		var tableExists bool
+		err = db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'timesheet' AND table_name = 'timesheet'").Scan(&tableExists)
+		if err != nil {
+			return fmt.Errorf("failed to check if table exists: %w", err)
+		}
+
+		if tableExists {
+			fmt.Println("Database already initialized ✓")
+			return nil
+		}
+	}
+
+	// Create database if it doesn't exist
+	_, err = rootDB.Exec("CREATE DATABASE IF NOT EXISTS `timesheet`")
+	if err != nil {
+		return fmt.Errorf("failed to create database: %w", err)
+	}
+
+	// Connect to the timesheet database
+	if err = Connect(user, password); err != nil {
+		return fmt.Errorf("failed to connect to timesheet database: %w", err)
+	}
+	defer Close()
+
+	// Create table if it doesn't exist
+	createTableSQL := `
+	CREATE TABLE IF NOT EXISTS timesheet (
+		id int NOT NULL AUTO_INCREMENT,
+		date date NOT NULL,
+		client_name varchar(30) NOT NULL,
+		client_hours int DEFAULT NULL,
+		vacation_hours int DEFAULT NULL,
+		idle_hours int DEFAULT NULL,
+		training_hours int DEFAULT NULL,
+		PRIMARY KEY (id),
+		KEY client_id (client_name)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+	`
+
+	_, err = db.Exec(createTableSQL)
+	if err != nil {
+		return fmt.Errorf("failed to create table: %w", err)
+	}
+
+	fmt.Println("Database initialized successfully 🍺")
+	return nil
+}
+
 // GetAllTimesheetEntries retrieves entries from the timesheet table
 // If year and month are provided (non-zero), it filters entries for that specific month
 func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error) {

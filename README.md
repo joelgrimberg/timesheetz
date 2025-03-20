@@ -9,6 +9,8 @@ Documentation regarding the api can be found [here](./api/README.md)
 
 ## Installation
 
+'--init' will initialize the database with the correct tables
+
 TODO: Add installation instructions
 
 ## Usage

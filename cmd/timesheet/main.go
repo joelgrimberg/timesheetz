@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -910,6 +911,24 @@ type errMsg error
 
 func initDatabase() {
 	dbUser, dbPassword := GetDBCredentials()
+
+	// ==================== INIT FUNCTION ====================
+	initFlag := flag.Bool("init", false, "Initialize the database")
+
+	flag.Parse()
+
+	// Check if initialization is requested
+	if *initFlag {
+		if err := db.InitializeDatabase(dbUser, dbPassword); err != nil {
+			fmt.Fprintf(os.Stderr, "Error initializing database: %v\n", err)
+			os.Exit(1)
+		}
+		// If just initializing, exit after success
+		if len(flag.Args()) == 0 {
+			os.Exit(0)
+		}
+	}
+
 	if dbUser == "" || dbPassword == "" {
 		fmt.Println("Error: Database username or password is empty")
 		os.Exit(1)
