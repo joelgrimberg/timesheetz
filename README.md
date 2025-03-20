@@ -1,4 +1,4 @@
-# Readme
+# Timesheetz - A unicorny way to track your hours
 
 <img src="docs/images/unicorn.jpg" height="150" />
 
