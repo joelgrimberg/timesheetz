@@ -11,8 +11,9 @@ Timesheetz is a timesheet management application with two interfaces:
 - **REST API**: Programmatically manage timesheet entries through HTTP
   endpoints. Supports the same operations as the TUI.
 
-The application stores all entries in a Sqlite database, allowing for persistent
-data storage and retrieval.
+The application stores all entries in a Sqlite database
+
+<img src="docs/images/timesheet.png" width="750" />
 
 ## Installation
 
