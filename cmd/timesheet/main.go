@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 	"timesheet/api/handler"
 	"timesheet/internal/db"
@@ -15,32 +16,48 @@ import (
 )
 
 func initDatabase() {
-	dbUser, dbPassword := GetDBCredentials()
+	dbPath := getDBPath()
 
 	initFlag := flag.Bool("init", false, "Initialize the database")
 	flag.Parse()
 
 	// Check if initialization is requested
 	if *initFlag {
-		if err := db.InitializeDatabase(dbUser, dbPassword); err != nil {
+		if err := db.InitializeDatabase(dbPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Error initializing database: %v\n", err)
 			os.Exit(1)
 		}
+		fmt.Println("Database initialized successfully at:", dbPath)
 		// If just initializing, exit after success
 		if len(flag.Args()) == 0 {
 			os.Exit(0)
 		}
 	}
 
-	if dbUser == "" || dbPassword == "" {
-		fmt.Println("Error: Database username or password is empty")
-		os.Exit(1)
-	}
-
-	err := db.Connect(dbUser, dbPassword)
+	// Connect to the database
+	err := db.Connect(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to connect to the database: %v", err)
 	}
+}
+
+// getDBPath returns the path to the SQLite database file
+func getDBPath() string {
+	// Default path in user's home directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// If there's an error getting home dir, use current directory
+		return "timesheet.db"
+	}
+
+	// Create the .timesheet directory if it doesn't exist
+	dbDir := filepath.Join(homeDir, ".config/timesheet")
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		// If directory creation fails, use current directory
+		return "timesheet.db"
+	}
+
+	return filepath.Join(dbDir, "timesheet.db")
 }
 
 func main() {

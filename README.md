@@ -11,7 +11,7 @@ Timesheetz is a timesheet management application with two interfaces:
 - **REST API**: Programmatically manage timesheet entries through HTTP
   endpoints. Supports the same operations as the TUI.
 
-The application stores all entries in a MySQL database, allowing for persistent
+The application stores all entries in a Sqlite database, allowing for persistent
 data storage and retrieval.
 
 ## Installation
@@ -20,25 +20,6 @@ data storage and retrieval.
 
 - Go 1.18 or higher
 - MySQL 8.0 or higher
-
-### Database Setup
-
-1. Install MySQL if not already installed:
-
-   ```bash
-   # macOS (using Homebrew)
-   brew install mysql
-   brew services start mysql
-
-   # Set a root password if not already set
-   mysql_secure_installation
-   ```
-
-2. Configure environment variables:
-   ```bash
-   export DBUSER="root"
-   export DBPASSWORD="your_password"
-   ```
 
 ### Application Setup
 
@@ -65,10 +46,6 @@ data storage and retrieval.
 Run the application in dev mode as a TUI with the following command:
 
 ```bash
-
-export DBUSER="root"
-export DBPASSWORD="your_password"
-
 make dev
 ```
 
@@ -90,5 +67,4 @@ make dev
 - [x] fix api server
 - [ ] update Readme and setup github pages
 - [ ] Build application in pipeline
-- [ ] Create installer for database
 - [ ] Add RayCast extension

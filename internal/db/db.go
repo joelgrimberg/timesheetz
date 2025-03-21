@@ -3,17 +3,19 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var db *sql.DB
 
-func Connect(user, password string) error {
-	dsn := fmt.Sprintf("%s:%s@tcp(localhost:3306)/timesheet", user, password)
-
+func Connect(dbPath string) error {
 	var err error
-	db, err = sql.Open("mysql", dsn)
+	db, err = sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return err
 	}
@@ -48,67 +50,35 @@ type TimesheetEntry struct {
 }
 
 // InitializeDatabase creates the database and tables if they don't exist
-func InitializeDatabase(user, password string) error {
-	// Connect to MySQL server without specifying a database
-	rootDSN := fmt.Sprintf("%s:%s@tcp(localhost:3306)/", user, password)
-	rootDB, err := sql.Open("mysql", rootDSN)
-	if err != nil {
-		return fmt.Errorf("failed to connect to MySQL: %w", err)
-	}
-	defer rootDB.Close()
-
-	// Check if database already exists
-	var dbExists bool
-	err = rootDB.QueryRow("SELECT COUNT(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = 'timesheet'").Scan(&dbExists)
-	if err != nil {
-		return fmt.Errorf("failed to check if database exists: %w", err)
-	}
-
-	if dbExists {
-		// Database exists, now check if table exists
-		if err = Connect(user, password); err != nil {
-			return fmt.Errorf("failed to connect to timesheet database: %w", err)
-		}
-		defer Close()
-
-		var tableExists bool
-		err = db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'timesheet' AND table_name = 'timesheet'").Scan(&tableExists)
-		if err != nil {
-			return fmt.Errorf("failed to check if table exists: %w", err)
-		}
-
-		if tableExists {
-			fmt.Println("Database already initialized ✓")
-			return nil
+func InitializeDatabase(dbPath string) error {
+	// Ensure the directory exists
+	dir := filepath.Dir(dbPath)
+	fmt.Print(dir)
+	if dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory for database: %w", err)
 		}
 	}
 
-	// Create database if it doesn't exist
-	_, err = rootDB.Exec("CREATE DATABASE IF NOT EXISTS `timesheet`")
+	var err error
+	db, err = sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return fmt.Errorf("failed to create database: %w", err)
+		return fmt.Errorf("failed to open database: %w", err)
 	}
-
-	// Connect to the timesheet database
-	if err = Connect(user, password); err != nil {
-		return fmt.Errorf("failed to connect to timesheet database: %w", err)
-	}
-	defer Close()
 
 	// Create table if it doesn't exist
 	createTableSQL := `
-	CREATE TABLE IF NOT EXISTS timesheet (
-		id int NOT NULL AUTO_INCREMENT,
-		date date NOT NULL,
-		client_name varchar(30) NOT NULL,
-		client_hours int DEFAULT NULL,
-		vacation_hours int DEFAULT NULL,
-		idle_hours int DEFAULT NULL,
-		training_hours int DEFAULT NULL,
-		PRIMARY KEY (id),
-		KEY client_id (client_name)
-	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-	`
+    CREATE TABLE IF NOT EXISTS timesheet (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        client_name TEXT NOT NULL,
+        client_hours INTEGER DEFAULT NULL,
+        vacation_hours INTEGER DEFAULT NULL,
+        idle_hours INTEGER DEFAULT NULL,
+        training_hours INTEGER DEFAULT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_client_name ON timesheet(client_name);
+    `
 
 	_, err = db.Exec(createTableSQL)
 	if err != nil {
@@ -167,8 +137,8 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 // GetTimesheetEntryByDate retrieves a single timesheet entry by date
 func GetTimesheetEntryByDate(date string) (TimesheetEntry, error) {
 	query := `SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours,
-             (client_hours + vacation_hours + idle_hours + training_hours) AS total_hours
-             FROM timesheet WHERE date = ?`
+              (client_hours + vacation_hours + idle_hours + training_hours) AS total_hours
+              FROM timesheet WHERE date = ?`
 
 	var entry TimesheetEntry
 	err := db.QueryRow(query, date).Scan(
@@ -235,8 +205,7 @@ func UpdateTimesheetEntry(entry TimesheetEntry) error {
 	return nil
 }
 
-// / PutTimesheetEntry inserts a new timesheet entry with the current date
-// and client_id fixed to '1'
+// PutTimesheetEntry inserts a new timesheet entry with the current date
 func PutTimesheetEntry(clientHours, vacationHours, idleHours, trainingHours float64) (int64, error) {
 	// Get current date in YYYY-MM-DD format
 	currentDate := time.Now().Format("2006-01-02")
@@ -248,8 +217,9 @@ func PutTimesheetEntry(clientHours, vacationHours, idleHours, trainingHours floa
 	}
 	defer stmt.Close()
 
-	// Execute the statement with fixed client_id=1
-	result, err := stmt.Exec(currentDate, 1, clientHours, vacationHours, idleHours, trainingHours)
+	// Execute the statement with client name as parameter
+	// Note: Replaced hardcoded value 1 with a client name
+	result, err := stmt.Exec(currentDate, "default", clientHours, vacationHours, idleHours, trainingHours)
 	if err != nil {
 		return 0, err
 	}
