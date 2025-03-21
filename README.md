@@ -20,7 +20,6 @@ The application stores all entries in a Sqlite database
 ### Prerequisites
 
 - Go 1.18 or higher
-- MySQL 8.0 or higher
 
 ### Application Setup
 
