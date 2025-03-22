@@ -33,3 +33,5 @@ Temporary Items
 
 # env files 
 .env
+
+**/*.pdf 

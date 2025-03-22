@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 	"timesheet/internal/db"
+	printPDF "timesheet/internal/print"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -32,6 +33,7 @@ type TimesheetKeyMap struct {
 	ClearEntry key.Binding
 	YankEntry  key.Binding
 	PasteEntry key.Binding
+	Print      key.Binding
 }
 
 // Default keybindings for the timesheet view
@@ -88,6 +90,9 @@ func DefaultTimesheetKeyMap() TimesheetKeyMap {
 		PasteEntry: key.NewBinding(
 			key.WithKeys("p"),
 			key.WithHelp("p", "paste entry")),
+		Print: key.NewBinding(
+			key.WithKeys("P"),
+			key.WithHelp("P", "print timesheet")),
 	}
 }
 
@@ -102,7 +107,7 @@ func (k TimesheetKeyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.Left, k.Right, k.JumpUp, k.JumpDown}, // first column
 		{k.PrevMonth, k.NextMonth},                            // second column - month navigation
 		{k.GotoToday, k.Enter, k.AddEntry, k.ClearEntry},      // third column
-		{k.YankEntry, k.PasteEntry, k.Help, k.Quit},           // fourth column
+		{k.YankEntry, k.PasteEntry, k.Print, k.Help, k.Quit},  // fourth column
 	}
 }
 
@@ -245,6 +250,13 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch {
+		case key.Matches(msg, m.keys.Print):
+			filename, err := printPDF.TimesheetToPDF(m.View())
+			if err != nil {
+				return m, tea.Printf("Error printing timesheet: %v", err)
+			}
+			return m, tea.Printf("Timesheet saved to %s", filename)
+
 		case key.Matches(msg, m.keys.YankEntry):
 			// Get the selected row data
 			row := m.table.SelectedRow()
@@ -423,7 +435,7 @@ func (m TimesheetModel) View() string {
 func generateMonthTable(year int, month time.Month) (table.Model, map[string]int, error) {
 	columns := []table.Column{
 		{Title: "Date", Width: 12},
-		{Title: "Day", Width: 10},
+		{Title: "Day", Width: 15},
 		{Title: "Client", Width: 20},
 		{Title: "Hours", Width: 10},
 		{Title: "Training", Width: 10},
