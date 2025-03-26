@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 	"timesheet/api/handler"
+	"timesheet/internal/config"
 	"timesheet/internal/db"
 	"timesheet/internal/ui"
 
@@ -65,18 +66,24 @@ func main() {
 	initDatabase()
 	defer db.Close()
 
+	// read configuration file (and create if it doesn't exist)
+	config.RequireConfig()
+
+	// TODO: use the same app instance
 	// Initialize the app with timesheet as the default view
 	app := ui.NewAppModel()
 
-	// Start API server in a goroutine before running the UI
-	go func() {
-		fmt.Println("Starting API server...")
-		apiP := tea.NewProgram(ui.NewAppModel())
-		handler.StartServer(apiP)
-	}()
+	if config.GetStartAPIServer() {
+		// Start API server in a goroutine before running the UI
+		go func() {
+			fmt.Println("Starting API server...")
+			apiP := tea.NewProgram(ui.NewAppModel())
+			handler.StartServer(apiP)
+		}()
 
-	// Give the API server a moment to start
-	time.Sleep(100 * time.Millisecond)
+		// Give the API server a moment to start
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Run the UI program
 	p := tea.NewProgram(app)

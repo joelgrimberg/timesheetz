@@ -34,4 +34,5 @@ Temporary Items
 # env files 
 .env
 
-**/*.pdf 
+**/*.pdf
+config.json

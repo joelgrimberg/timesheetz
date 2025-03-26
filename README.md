@@ -65,6 +65,10 @@ make dev
 - [x] Add all database fields to insert form
 - [x] Add all database fields to table
 - [x] fix api server
+- [x] add send to email
+- [x] create setup script
+- [x] apply config.json key/values to the application
+- [ ] create logging
 - [ ] update Readme and setup github pages
 - [ ] Build application in pipeline
 - [ ] Add RayCast extension

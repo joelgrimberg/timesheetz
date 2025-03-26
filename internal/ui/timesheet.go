@@ -17,23 +17,24 @@ import (
 
 // Key bindings
 type TimesheetKeyMap struct {
-	Up         key.Binding
-	Down       key.Binding
-	Left       key.Binding
-	Right      key.Binding
-	GotoToday  key.Binding
-	Help       key.Binding
-	Quit       key.Binding
-	Enter      key.Binding
-	PrevMonth  key.Binding
-	NextMonth  key.Binding
-	AddEntry   key.Binding
-	JumpUp     key.Binding
-	JumpDown   key.Binding
-	ClearEntry key.Binding
-	YankEntry  key.Binding
-	PasteEntry key.Binding
-	Print      key.Binding
+	Up          key.Binding
+	Down        key.Binding
+	Left        key.Binding
+	Right       key.Binding
+	GotoToday   key.Binding
+	Help        key.Binding
+	Quit        key.Binding
+	Enter       key.Binding
+	PrevMonth   key.Binding
+	NextMonth   key.Binding
+	AddEntry    key.Binding
+	JumpUp      key.Binding
+	JumpDown    key.Binding
+	ClearEntry  key.Binding
+	YankEntry   key.Binding
+	PasteEntry  key.Binding
+	Print       key.Binding
+	SendAsEmail key.Binding
 }
 
 // Default keybindings for the timesheet view
@@ -93,6 +94,9 @@ func DefaultTimesheetKeyMap() TimesheetKeyMap {
 		Print: key.NewBinding(
 			key.WithKeys("P"),
 			key.WithHelp("P", "print timesheet")),
+		SendAsEmail: key.NewBinding(
+			key.WithKeys("S"),
+			key.WithHelp("S", "email timesheet")),
 	}
 }
 
@@ -104,10 +108,10 @@ func (k TimesheetKeyMap) ShortHelp() []key.Binding {
 // FullHelp returns keybindings for the expanded help view.
 func (k TimesheetKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Left, k.Right, k.JumpUp, k.JumpDown}, // first column
-		{k.PrevMonth, k.NextMonth},                            // second column - month navigation
-		{k.GotoToday, k.Enter, k.AddEntry, k.ClearEntry},      // third column
-		{k.YankEntry, k.PasteEntry, k.Print, k.Help, k.Quit},  // fourth column
+		{k.Up, k.Down, k.Left, k.Right, k.JumpUp, k.JumpDown},               // first column
+		{k.PrevMonth, k.NextMonth},                                          // second column - month navigation
+		{k.GotoToday, k.Enter, k.AddEntry, k.ClearEntry},                    // third column
+		{k.YankEntry, k.PasteEntry, k.Print, k.SendAsEmail, k.Help, k.Quit}, // fourth column
 	}
 }
 
@@ -250,11 +254,22 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, m.keys.Print):
-			filename, err := printPDF.TimesheetToPDF(m.View())
+		case key.Matches(msg, m.keys.SendAsEmail):
+
+			sendAsEmail := true
+			filename, err := printPDF.TimesheetToPDF(m.View(), sendAsEmail)
 			if err != nil {
 				return m, tea.Printf("Error printing timesheet: %v", err)
 			}
+			return m, tea.Printf("Timesheet saved to %s", filename)
+
+		case key.Matches(msg, m.keys.Print):
+			sendAsEmail := false
+			filename, err := printPDF.TimesheetToPDF(m.View(), sendAsEmail)
+			if err != nil {
+				return m, tea.Printf("Error printing timesheet: %v", err)
+			}
+
 			return m, tea.Printf("Timesheet saved to %s", filename)
 
 		case key.Matches(msg, m.keys.YankEntry):

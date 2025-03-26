@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"timesheet/internal/email"
 	"unicode"
 
 	"github.com/jung-kurt/gofpdf"
@@ -52,7 +53,7 @@ func stripANSI(str string) string {
 }
 
 // TimesheetToPDF converts a timesheet view to a PDF file
-func TimesheetToPDF(viewContent string) (string, error) {
+func TimesheetToPDF(viewContent string, sendAsEmail bool) (string, error) {
 	pdf := gofpdf.New("L", "mm", "A4", "")
 	pdf.AddPage()
 	pdf.SetFont("Courier", "", 10) // Monospaced font works better for tabular data
@@ -92,6 +93,10 @@ func TimesheetToPDF(viewContent string) (string, error) {
 	err := pdf.OutputFileAndClose(filename)
 	if err != nil {
 		return "", err
+	}
+
+	if sendAsEmail {
+		email.EmailAttachment(filename)
 	}
 
 	return filename, nil
