@@ -46,7 +46,8 @@ type TimesheetEntry struct {
 	Idle_hours     int
 	Training_hours int
 	Total_hours    int
-	Notes          string // Added for future use
+	Sick_hours     int
+	Holiday_hours  int
 }
 
 // InitializeDatabase creates the database and tables if they don't exist
@@ -75,7 +76,9 @@ func InitializeDatabase(dbPath string) error {
         client_hours INTEGER DEFAULT NULL,
         vacation_hours INTEGER DEFAULT NULL,
         idle_hours INTEGER DEFAULT NULL,
-        training_hours INTEGER DEFAULT NULL
+        training_hours INTEGER DEFAULT NULL,
+        sick_hours INTEGER DEFAULT NULL,
+        holiday_hours INTEGER DEFAULT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_client_name ON timesheet(client_name);
     `
@@ -95,8 +98,8 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 	var query string
 	var args []any
 
-	baseQuery := "SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, " +
-		"(client_hours + vacation_hours + idle_hours + training_hours) AS total_hours " +
+	baseQuery := "SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, " +
+		"(client_hours + vacation_hours + idle_hours + training_hours + sick_hours + holiday_hours) AS total_hours " +
 		"FROM timesheet"
 
 	if year != 0 && month != 0 {
@@ -121,7 +124,7 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 	for rows.Next() {
 		var entry TimesheetEntry
 		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours,
-			&entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Total_hours); err != nil {
+			&entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
@@ -136,8 +139,8 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 
 // GetTimesheetEntryByDate retrieves a single timesheet entry by date
 func GetTimesheetEntryByDate(date string) (TimesheetEntry, error) {
-	query := `SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours,
-              (client_hours + vacation_hours + idle_hours + training_hours) AS total_hours
+	query := `SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours,
+              (client_hours + vacation_hours + idle_hours + training_hours + holiday_hours + sick_hours) AS total_hours
               FROM timesheet WHERE date = ?`
 
 	var entry TimesheetEntry
@@ -149,6 +152,8 @@ func GetTimesheetEntryByDate(date string) (TimesheetEntry, error) {
 		&entry.Vacation_hours,
 		&entry.Idle_hours,
 		&entry.Training_hours,
+		&entry.Sick_hours,
+		&entry.Holiday_hours,
 		&entry.Total_hours,
 	)
 	if err != nil {
@@ -159,15 +164,17 @@ func GetTimesheetEntryByDate(date string) (TimesheetEntry, error) {
 }
 
 func AddTimesheetEntry(entry TimesheetEntry) error {
-	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours)
-              VALUES (?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := db.Exec(query,
 		entry.Date,
 		entry.Client_name,
 		entry.Client_hours,
 		entry.Vacation_hours,
 		entry.Idle_hours,
-		entry.Training_hours)
+		entry.Training_hours,
+		entry.Sick_hours,
+		entry.Holiday_hours)
 	if err != nil {
 		return err
 	}
@@ -179,7 +186,7 @@ func AddTimesheetEntry(entry TimesheetEntry) error {
 func UpdateTimesheetEntry(entry TimesheetEntry) error {
 	query := `UPDATE timesheet 
               SET client_name = ?, client_hours = ?, 
-                  vacation_hours = ?, idle_hours = ?, training_hours = ? 
+                  vacation_hours = ?, idle_hours = ?, training_hours = ?, holiday_hours = ?, sick_hours = ?
               WHERE date = ?`
 
 	result, err := db.Exec(query,
@@ -188,6 +195,8 @@ func UpdateTimesheetEntry(entry TimesheetEntry) error {
 		entry.Vacation_hours,
 		entry.Idle_hours,
 		entry.Training_hours,
+		entry.Holiday_hours,
+		entry.Sick_hours,
 		entry.Date)
 	if err != nil {
 		return fmt.Errorf("failed to update record: %w", err)
@@ -206,12 +215,12 @@ func UpdateTimesheetEntry(entry TimesheetEntry) error {
 }
 
 // PutTimesheetEntry inserts a new timesheet entry with the current date
-func PutTimesheetEntry(clientHours, vacationHours, idleHours, trainingHours float64) (int64, error) {
+func PutTimesheetEntry(clientHours, vacationHours, idleHours, trainingHours, holidayHours, sickHours float64) (int64, error) {
 	// Get current date in YYYY-MM-DD format
 	currentDate := time.Now().Format("2006-01-02")
 
 	// Use prepared statement to prevent SQL injection
-	stmt, err := db.Prepare("INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours) VALUES (?, ?, ?, ?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, holiday_hours, sick_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return 0, err
 	}
@@ -219,7 +228,7 @@ func PutTimesheetEntry(clientHours, vacationHours, idleHours, trainingHours floa
 
 	// Execute the statement with client name as parameter
 	// Note: Replaced hardcoded value 1 with a client name
-	result, err := stmt.Exec(currentDate, "default", clientHours, vacationHours, idleHours, trainingHours)
+	result, err := stmt.Exec(currentDate, "default", clientHours, vacationHours, idleHours, trainingHours, holidayHours, sickHours)
 	if err != nil {
 		return 0, err
 	}
@@ -240,6 +249,8 @@ func UpdateTimesheetEntryById(id string, data map[string]any) error {
 		"vacation_hours": true,
 		"idle_hours":     true,
 		"training_hours": true,
+		"holiday_hours":  true,
+		"sick_hours":     true,
 	}
 
 	// Start building the query

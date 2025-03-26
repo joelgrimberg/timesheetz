@@ -72,7 +72,6 @@ func main() {
 	// TODO: use the same app instance
 	// Initialize the app with timesheet as the default view
 	app := ui.NewAppModel()
-
 	if config.GetStartAPIServer() {
 		// Start API server in a goroutine before running the UI
 		go func() {

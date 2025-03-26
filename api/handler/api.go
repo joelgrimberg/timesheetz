@@ -50,6 +50,8 @@ func StartServer(p *tea.Program) {
 			VacationHours int    `json:"vacation_hours"`
 			IdleHours     int    `json:"idle_hours"`
 			TrainingHours int    `json:"training_hours"`
+			HolidayHours  int    `json:"holiday_hours"`
+			SickHours     int    `json:"sick_hours"`
 		}
 
 		var req EntryRequest
@@ -84,6 +86,8 @@ func StartServer(p *tea.Program) {
 			Vacation_hours: req.VacationHours,
 			Idle_hours:     req.IdleHours,
 			Training_hours: req.TrainingHours,
+			Holiday_hours:  req.HolidayHours,
+			Sick_hours:     req.SickHours,
 		}
 
 		// Call the AddTimesheetEntry function
@@ -200,6 +204,8 @@ func StartServer(p *tea.Program) {
 			IdleHours     *int    `json:"idle_hours"`
 			TrainingHours *int    `json:"training_hours"`
 			ClientName    *string `json:"client_name,omitempty"`
+			HolidayHours  *int    `json:"holiday_hours,omitempty"`
+			SickHours     *int    `json:"sick_hours,omitempty"`
 		}
 
 		var req EntryUpdateRequest
@@ -280,6 +286,8 @@ func StartServer(p *tea.Program) {
 			VacationHours int    `json:"vacation_hours"`
 			IdleHours     int    `json:"idle_hours"`
 			TrainingHours int    `json:"training_hours"`
+			HolidayHours  int    `json:"holiday_hours"`
+			SickHours     int    `json:"sick_hours"`
 		}
 
 		var req EntryFullUpdateRequest
@@ -302,6 +310,8 @@ func StartServer(p *tea.Program) {
 			Vacation_hours: req.VacationHours,
 			Idle_hours:     req.IdleHours,
 			Training_hours: req.TrainingHours,
+			Holiday_hours:  req.HolidayHours,
+			Sick_hours:     req.SickHours,
 		}
 
 		// Call the UpdateTimesheetEntry function

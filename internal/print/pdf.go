@@ -2,9 +2,11 @@ package printPDF
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
+	"timesheet/internal/config"
 	"timesheet/internal/email"
 	"unicode"
 
@@ -54,9 +56,35 @@ func stripANSI(str string) string {
 
 // TimesheetToPDF converts a timesheet view to a PDF file
 func TimesheetToPDF(viewContent string, sendAsEmail bool) (string, error) {
-	pdf := gofpdf.New("L", "mm", "A4", "")
+	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
 	pdf.SetFont("Courier", "", 10) // Monospaced font works better for tabular data
+	pdf.SetFillColor(255, 192, 203)
+
+	logoPath := "assets/logo.jpg"
+	if _, err := os.Stat(logoPath); os.IsNotExist(err) {
+		logoPath = "docs/images/unicorn.jpg" // Fallback image
+	}
+	if _, err := os.Stat(logoPath); err == nil {
+		pdf.Image(logoPath, 10, 10, 30, 0, false, "", 0, "")
+	}
+
+	// Get user configuration
+	name, company, freeSpeech, err := config.GetUserConfig()
+	if err != nil {
+		// Use default values if config cannot be read
+		name = "Unknown User"
+		company = "Unknown Company"
+		freeSpeech = "Free Speech"
+	}
+
+	pdf.SetTextColor(255, 20, 147)
+	pdf.Text(60, 12, "Name: "+name)
+	pdf.Text(60, 20, "Company: "+company)
+	pdf.Text(60, 28, freeSpeech)
+
+	pdf.SetFont("Courier", "", 6) // Monospaced font works better for tabular data
+	pdf.SetTextColor(0, 0, 0)
 
 	// Clean the view content
 	viewContent = stripANSI(viewContent)
@@ -68,16 +96,16 @@ func TimesheetToPDF(viewContent string, sendAsEmail bool) (string, error) {
 	}
 
 	// Set starting position
-	y := 10.0
+	y := 50.0
 	lineHeight := 5.0
 
 	// Add each line to the PDF
 	for _, line := range lines {
 		// Special formatting for the total line
-		if strings.HasPrefix(line, "Total:") {
+		if strings.HasPrefix(line, "    Total:") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
-				pdf.Text(10, y, "Total:")
+				pdf.Text(10, y, "   Total:")
 				pdf.Text(124, y, strings.TrimSpace(parts[1])) // Position the numbers at x=50
 			} else {
 				pdf.Text(10, y, line)
@@ -89,8 +117,8 @@ func TimesheetToPDF(viewContent string, sendAsEmail bool) (string, error) {
 	}
 
 	// Save the PDF with a more descriptive filename
-	filename := fmt.Sprintf("timesheet_%s.pdf", time.Now().Format("2006-01-02"))
-	err := pdf.OutputFileAndClose(filename)
+	filename := fmt.Sprintf("timesheet_%s.pdf", time.Now().Format("01-2006"))
+	err = pdf.OutputFileAndClose(filename)
 	if err != nil {
 		return "", err
 	}

@@ -20,6 +20,9 @@ The application stores all entries in a Sqlite database
 ### Prerequisites
 
 - Go 1.18 or higher
+- For the email feature to work, you need to have to create an account at
+  https://resend.com and create an API key. You can then use the API key on
+  first launch of the application.
 
 ### Application Setup
 
@@ -27,18 +30,11 @@ The application stores all entries in a Sqlite database
 
    ```bash
    git clone https://github.com/username/timesheetz.git
-   cd timesheetz
    ```
 
-2. Build the application:
-
+2. Initialize the database:
    ```bash
-   make build
-   ```
-
-3. Initialize the database:
-   ```bash
-   ./timesheet --init
+   ./go run timesheet --init
    ```
 
 ## Usage

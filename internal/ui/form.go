@@ -18,6 +18,8 @@ const (
 	trainingHoursField
 	vacationHoursField
 	idleHoursField
+	holidayHoursField
+	sickHoursField
 )
 
 // Add to your message types
@@ -64,7 +66,7 @@ func InitialFormModelWithDate(date string) FormModel {
 	inputs = append(inputs, clientInput)
 
 	// Hours fields (client, training, vacation, idle)
-	for _, label := range []string{"Client hours", "Training hours", "Vacation hours", "Idle hours"} {
+	for _, label := range []string{"Client hours", "Training hours", "Vacation hours", "Idle hours", "Holiday hours", "Sick hours"} {
 		i := textinput.New()
 		i.Placeholder = label
 		i.CharLimit = 5
@@ -86,6 +88,8 @@ func (m *FormModel) prefillFromEntry(entry db.TimesheetEntry) {
 	m.inputs[trainingHoursField].SetValue(strconv.Itoa(entry.Training_hours))
 	m.inputs[vacationHoursField].SetValue(strconv.Itoa(entry.Vacation_hours))
 	m.inputs[idleHoursField].SetValue(strconv.Itoa(entry.Idle_hours))
+	m.inputs[holidayHoursField].SetValue(strconv.Itoa(entry.Holiday_hours))
+	m.inputs[sickHoursField].SetValue(strconv.Itoa(entry.Sick_hours))
 }
 
 func (m FormModel) Init() tea.Cmd {
@@ -231,8 +235,21 @@ func (m FormModel) handleSubmit() tea.Cmd {
 		}
 	}
 
+	sickHours, err := parseHours(m.inputs[sickHoursField].Value())
+	if err != nil {
+		return func() tea.Msg {
+			return errMsg(fmt.Errorf("invalid sick hours: %v", err))
+		}
+	}
+
+	holidayHours, err := parseHours(m.inputs[holidayHoursField].Value())
+	if err != nil {
+		return func() tea.Msg {
+			return errMsg(fmt.Errorf("invalid holiday hours: %v", err))
+		}
+	}
 	// Calculate total hours
-	totalHours := clientHours + trainingHours + vacationHours + idleHours
+	totalHours := clientHours + trainingHours + vacationHours + idleHours + sickHours + holidayHours
 
 	// Save to database
 	entry := db.TimesheetEntry{
@@ -242,6 +259,8 @@ func (m FormModel) handleSubmit() tea.Cmd {
 		Training_hours: trainingHours,
 		Vacation_hours: vacationHours,
 		Idle_hours:     idleHours,
+		Holiday_hours:  holidayHours,
+		Sick_hours:     sickHours,
 		Total_hours:    totalHours,
 	}
 
@@ -271,6 +290,8 @@ func fieldLabel(i int) string {
 		"Client Hours:",
 		"Training Hours:",
 		"Vacation Hours:",
+		"Holiday Hours:",
+		"Sick Hours:",
 		"Idle Hours:",
 	}
 	return labels[i]

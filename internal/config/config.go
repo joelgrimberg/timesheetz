@@ -14,6 +14,8 @@ import (
 
 type Config struct {
 	Name           string `json:"name"`
+	CompanyName    string `json:"companyName"`
+	FreeSpeech     string `json:"FreeSpeech"`
 	StartAPIServer bool   `json:"startApiServer"`
 	SendToOthers   bool   `json:"sendToOthers"`
 	RecipientEmail string `json:"recipientEmail,omitempty"`
@@ -31,6 +33,8 @@ func GetStartAPIServer() bool {
 
 	var configData struct {
 		Name           string `json:"name"`
+		CompanyName    string `json:"companyName"`
+		FreeSpeech     string `json:"FreeSpeech"`
 		StartApiServer bool   `json:"startApiServer"`
 		SendToOthers   bool   `json:"sendToOthers"`
 		RecipientEmail string `json:"recipientEmail"`
@@ -74,6 +78,18 @@ func GetEmailConfig() (name string, sendToOthers bool, recipientEmail, senderEma
 		config.SenderEmail, config.ReplyToEmail, config.ResendAPIKey, nil
 }
 
+func GetUserConfig() (name, companyName, freeSpeech string, err error) {
+	configFile, err := os.ReadFile("config.json")
+	if err != nil {
+		return "", "", "", fmt.Errorf("error reading config file: %w", err)
+	}
+	var config Config
+	if err := json.Unmarshal(configFile, &config); err != nil {
+		return "", "", "", fmt.Errorf("error parsing config JSON: %w", err)
+	}
+	return config.Name, config.CompanyName, config.FreeSpeech, nil
+}
+
 func RequireConfig() {
 	config := Config{}
 
@@ -100,6 +116,18 @@ func RequireConfig() {
 				Title("What is your name?").
 				Placeholder("Uni Corn").
 				Description("We'll use this to personalize your experience."),
+
+			huh.NewInput().
+				Value(&config.CompanyName).
+				Title("What is the name of your company?").
+				Placeholder("Uni Corn").
+				Description("Don't worry, we all serve a master."),
+
+			huh.NewInput().
+				Value(&config.FreeSpeech).
+				Title("What else do you want to share (will be put below the company name").
+				Placeholder("Uni Corn").
+				Description("Free Speech"),
 
 			huh.NewConfirm().
 				Title("Do you want to start the API server every time you start the app?").

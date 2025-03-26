@@ -122,6 +122,8 @@ type YankedEntry struct {
 	TrainingHours int
 	VacationHours int
 	IdleHours     int
+	HolidayHours  int
+	SickHours     int
 }
 
 // TimesheetModel represents the timesheet view
@@ -211,6 +213,21 @@ func parseIntWithDefault(s string) int {
 	return val
 }
 
+// Helper function to check if the row has any data to yank
+func hasYankableData(row []string) bool {
+	// Check if there's actual data in any hours column (3-9)
+	for i := 3; i <= 9; i++ {
+		if row[i] != "-" && row[i] != "0" {
+			return true
+		}
+	}
+	// Also check if there's a client name
+	if row[2] != "-" {
+		return true
+	}
+	return false
+}
+
 func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -276,8 +293,8 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Get the selected row data
 			row := m.table.SelectedRow()
 
-			// Skip if there's no real data (just the date)
-			if row[2] == "-" {
+			// Check if there's any data to yank
+			if !hasYankableData(row) {
 				return m, tea.Printf("No entry to yank")
 			}
 
@@ -286,6 +303,8 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			trainingHours := parseIntWithDefault(row[4])
 			vacationHours := parseIntWithDefault(row[5])
 			idleHours := parseIntWithDefault(row[6])
+			holidayHours := parseIntWithDefault(row[7])
+			sickHours := parseIntWithDefault(row[8])
 
 			m.yankedEntry = &YankedEntry{
 				ClientName:    row[2],
@@ -293,10 +312,11 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				TrainingHours: trainingHours,
 				VacationHours: vacationHours,
 				IdleHours:     idleHours,
+				HolidayHours:  holidayHours,
+				SickHours:     sickHours,
 			}
 
-			// return m, tea.Printf("Entry yanked: %s - %dh client, %dh training, %dh vacation, %dh idle",
-			// 	row[2], clientHours, trainingHours, vacationHours, idleHours)
+			return m, tea.Printf("Entry yanked: %s", row[2])
 
 		case key.Matches(msg, m.keys.PasteEntry):
 			// Check if we have any yanked data
@@ -312,7 +332,9 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			totalHours := m.yankedEntry.ClientHours +
 				m.yankedEntry.TrainingHours +
 				m.yankedEntry.VacationHours +
-				m.yankedEntry.IdleHours
+				m.yankedEntry.IdleHours +
+				m.yankedEntry.HolidayHours +
+				m.yankedEntry.SickHours
 
 			// Create or update the entry
 			entry := db.TimesheetEntry{
@@ -322,11 +344,12 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Training_hours: m.yankedEntry.TrainingHours,
 				Vacation_hours: m.yankedEntry.VacationHours,
 				Idle_hours:     m.yankedEntry.IdleHours,
+				Holiday_hours:  m.yankedEntry.HolidayHours,
+				Sick_hours:     m.yankedEntry.SickHours,
 				Total_hours:    totalHours,
 			}
 
 			// Save to database
-			// db,
 			err := db.AddTimesheetEntry(entry)
 			if err != nil {
 				return m, tea.Printf("Error saving entry: %v", err)
@@ -427,10 +450,12 @@ func (m TimesheetModel) View() string {
 
 	// Render the footer with totals
 	footerContent := fmt.Sprintf("%-12s %-10s %-20s", "Total:", "", "")
-	footerContent += fmt.Sprintf("      %d", m.columnTotals["clientHours"])
+	footerContent += fmt.Sprintf("           %d", m.columnTotals["clientHours"])
 	footerContent += fmt.Sprintf("           %d", m.columnTotals["trainingHours"])
 	footerContent += fmt.Sprintf("           %d", m.columnTotals["vacationHours"])
 	footerContent += fmt.Sprintf("           %d", m.columnTotals["idleHours"])
+	footerContent += fmt.Sprintf("           %d", m.columnTotals["holidayHours"])
+	footerContent += fmt.Sprintf("           %d", m.columnTotals["sickHours"])
 	footerContent += fmt.Sprintf("           %d", m.columnTotals["totalHours"])
 
 	s += footerStyle.Render(footerContent) + "\n\n"
@@ -456,6 +481,8 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 		{Title: "Training", Width: 10},
 		{Title: "Vacation", Width: 10},
 		{Title: "Idle", Width: 10},
+		{Title: "Holiday", Width: 10},
+		{Title: "Sick", Width: 10},
 		{Title: "Total", Width: 10},
 	}
 
@@ -465,6 +492,8 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 		"trainingHours": 0,
 		"vacationHours": 0,
 		"idleHours":     0,
+		"holidayHours":  0,
+		"sickHours":     0,
 		"totalHours":    0,
 	}
 
@@ -484,6 +513,8 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 		columnTotals["trainingHours"] += entry.Training_hours
 		columnTotals["vacationHours"] += entry.Vacation_hours
 		columnTotals["idleHours"] += entry.Idle_hours
+		columnTotals["holidayHours"] += entry.Holiday_hours
+		columnTotals["sickHours"] += entry.Sick_hours
 		columnTotals["totalHours"] += entry.Total_hours
 	}
 
@@ -503,6 +534,8 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 		training := "-"
 		vacation := "-"
 		idle := "-"
+		holiday := "-"
+		sick := "-"
 		totalHours := "-"
 
 		// If we have an entry for this date, use its data
@@ -512,6 +545,8 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 			training = fmt.Sprintf("%d", entry.Training_hours)
 			vacation = fmt.Sprintf("%d", entry.Vacation_hours)
 			idle = fmt.Sprintf("%d", entry.Idle_hours)
+			holiday = fmt.Sprintf("%d", entry.Holiday_hours)
+			sick = fmt.Sprintf("%d", entry.Sick_hours)
 			totalHours = fmt.Sprintf("%d", entry.Total_hours)
 		}
 
@@ -528,6 +563,8 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 			training,
 			vacation,
 			idle,
+			holiday,
+			sick,
 			totalHours,
 		}
 		rows = append(rows, row)
@@ -537,7 +574,7 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 		table.WithColumns(columns),
 		table.WithRows(rows),
 		table.WithFocused(true),
-		table.WithHeight(31), // Reduced height slightly to make room for footer
+		table.WithHeight(32), // Reduced height slightly to make room for footer
 	)
 
 	s := table.DefaultStyles()
