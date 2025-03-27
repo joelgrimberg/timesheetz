@@ -16,6 +16,40 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+func setupLogging() *os.File {
+	// Create logs directory inside the user's .config/timesheet folder
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Println("Warning: couldn't get home directory, using current directory for logs")
+		homeDir = "."
+	}
+
+	logDir := filepath.Join(homeDir, ".config/timesheet/logs")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		log.Println("Warning: couldn't create logs directory:", err)
+		logDir = "."
+	}
+
+	// Use just the date part for daily log files
+	dailyTimestamp := time.Now().Format("2006-01-02")
+	logPath := filepath.Join(logDir, fmt.Sprintf("timesheet_%s.log", dailyTimestamp))
+
+	// Open file with append flag - this will create it if it doesn't exist
+	// or append to it if it does
+	f, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("Error opening log file: %v", err)
+	}
+
+	// Don't close the file here - we want it to stay open for the duration of the program
+	// Instead, we'll defer the close in main()
+
+	log.SetOutput(f)
+	log.Printf("Logging initialized at %s", time.Now().Format("15:04:05"))
+
+	return f
+}
+
 func initDatabase() {
 	dbPath := getDBPath()
 
@@ -28,7 +62,7 @@ func initDatabase() {
 			fmt.Fprintf(os.Stderr, "Error initializing database: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("Database initialized successfully at:", dbPath)
+		log.Println("Database initialized successfully at:", dbPath)
 		// If just initializing, exit after success
 		if len(flag.Args()) == 0 {
 			os.Exit(0)
@@ -62,6 +96,10 @@ func getDBPath() string {
 }
 
 func main() {
+	// Set up logging first thing
+	logFile := setupLogging()
+	defer logFile.Close()
+
 	// Initialize the database first
 	initDatabase()
 	defer db.Close()
@@ -75,7 +113,7 @@ func main() {
 	if config.GetStartAPIServer() {
 		// Start API server in a goroutine before running the UI
 		go func() {
-			fmt.Println("Starting API server...")
+			log.Println("Starting API server...")
 			apiP := tea.NewProgram(ui.NewAppModel())
 			handler.StartServer(apiP)
 		}()

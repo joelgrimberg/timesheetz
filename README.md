@@ -19,11 +19,7 @@ The application stores all entries in a Sqlite database
 
 ### Prerequisites
 
-<<<<<<< Updated upstream
-- Go 1.18 or higher
-=======
 - Go 1.24.1 or higher
->>>>>>> Stashed changes
 - For the email feature to work, you need to have to create an account at
   https://resend.com and create an API key. You can then use the API key on
   first launch of the application.
@@ -53,26 +49,12 @@ The application uses keyboard shortcuts for navigation and actions. See the
 [keyboard shortcuts guide](docs/shortcuts.md) for a comprehensive list of
 available commands.
 
+## Logging
+
+Log files can be found in the `logs` directory: ~/.config/timesheet/logs
+
 ## TODO
 
-- [x] Build Table setup
-- [x] add data from database to table
-- [x] switch months in table view
-- [x] add keys to the table
-  - [x] add q
-  - [x] add enter
-  - [x] add up / down
-  - [x] add extended key view
-  - [x] add left / right keys to move between months
-- [x] Create insert form
-- [x] Create edit form
-- [x] Add all database fields to insert form
-- [x] Add all database fields to table
-- [x] fix api server
-- [x] add send to email
-- [x] create setup script
-- [x] apply config.json key/values to the application
-- [ ] create logging
 - [ ] update Readme and setup github pages
 - [ ] Build application in pipeline
 - [ ] Add RayCast extension
