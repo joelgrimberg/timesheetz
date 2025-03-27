@@ -19,7 +19,11 @@ The application stores all entries in a Sqlite database
 
 ### Prerequisites
 
+<<<<<<< Updated upstream
 - Go 1.18 or higher
+=======
+- Go 1.24.1 or higher
+>>>>>>> Stashed changes
 - For the email feature to work, you need to have to create an account at
   https://resend.com and create an API key. You can then use the API key on
   first launch of the application.
@@ -44,6 +48,10 @@ Run the application in dev mode as a TUI with the following command:
 ```bash
 make dev
 ```
+
+The application uses keyboard shortcuts for navigation and actions. See the
+[keyboard shortcuts guide](docs/shortcuts.md) for a comprehensive list of
+available commands.
 
 ## TODO
 

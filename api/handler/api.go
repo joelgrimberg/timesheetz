@@ -19,6 +19,9 @@ type ApiMsg struct {
 func StartServer(p *tea.Program) {
 	router := gin.Default()
 
+	// disable trusted proxies functionality
+	router.SetTrustedProxies(nil)
+
 	// Add the request ID middleware early in the chain
 	router.Use(middleware.RequestIDMiddleware())
 

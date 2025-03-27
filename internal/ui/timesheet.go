@@ -1,3 +1,28 @@
+// Package ui provides a terminal-based user interface for the timesheet application,
+// built using the Charm libraries (Bubble Tea, Bubbles, and Lip Gloss). It implements
+// a monthly calendar view that allows users to navigate through time periods, view
+// daily timesheet entries, and manage work hours across different categories.
+//
+// The main component is a TimesheetModel, which displays a table of days for a month
+// with various hour categories (client work, training, vacation, etc.) that can be
+// edited, copied, and pasted between days.
+//
+// Key features:
+//   - Monthly calendar view with visual distinction for weekends
+//   - Navigation between months with shortcuts
+//   - Adding, editing, and deleting timesheet entries
+//   - Copy/paste functionality for entries between days
+//   - Column totals for different hour categories
+//   - PDF export and email capabilities
+//   - Vim-inspired keybindings for efficient navigation
+//
+// Example usage:
+//
+//	p := tea.NewProgram(ui.InitialTimesheetModel())
+//	if _, err := p.Run(); err != nil {
+//	    log.Fatal("Error running program:", err)
+//	}
+
 package ui
 
 import (
