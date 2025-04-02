@@ -28,10 +28,13 @@ package ui
 import (
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"time"
+	"timesheet/internal/config"
 	"timesheet/internal/db"
-	printPDF "timesheet/internal/print"
+	printExcel "timesheet/internal/print-excel"
+	printPDF "timesheet/internal/print-pdf"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -246,11 +249,80 @@ func hasYankableData(row []string) bool {
 			return true
 		}
 	}
+
 	// Also check if there's a client name
-	if row[2] != "-" {
-		return true
+	return row[2] != "-"
+}
+
+func sendDocument(content string, sendAsEmail bool, year int, month time.Month) (string, error) {
+	format := config.GetDocumentType()
+	fmt.Println(format)
+	fmt.Println("printing to ...")
+
+	if format == "excel" {
+		// Fetch timesheet entries
+		entries, err := db.GetAllTimesheetEntries(year, month)
+		if err != nil {
+			return "", fmt.Errorf("error fetching timesheet entries: %v", err)
+		}
+
+		// Debug: Output entries information to a log file
+		logFile, err := os.OpenFile("entries_debug.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			fmt.Printf("Error creating debug log: %v\n", err)
+		} else {
+			defer logFile.Close()
+			fmt.Fprintf(logFile, "Year: %d, Month: %s\n", year, month)
+			fmt.Fprintf(logFile, "Total entries found: %d\n", len(entries))
+			fmt.Fprintf(logFile, "------------------------------------------\n")
+
+			for i, entry := range entries {
+				fmt.Fprintf(logFile, "Entry %d:\n", i+1)
+				fmt.Fprintf(logFile, "  Date: %s\n", entry.Date)
+				fmt.Fprintf(logFile, "  Client: %s\n", entry.Client_name)
+				fmt.Fprintf(logFile, "  Client Hours: %d\n", entry.Client_hours)
+				fmt.Fprintf(logFile, "  Training Hours: %d\n", entry.Training_hours)
+				fmt.Fprintf(logFile, "  Vacation Hours: %d\n", entry.Vacation_hours)
+				fmt.Fprintf(logFile, "  Idle Hours: %d\n", entry.Idle_hours)
+				fmt.Fprintf(logFile, "  Holiday Hours: %d\n", entry.Holiday_hours)
+				fmt.Fprintf(logFile, "  Sick Hours: %d\n", entry.Sick_hours)
+				fmt.Fprintf(logFile, "  Total Hours: %d\n", entry.Total_hours)
+				fmt.Fprintf(logFile, "------------------------------------------\n")
+			}
+		}
+
+		// Convert database entries to TimesheetRow objects
+		var timesheetRows []printExcel.TimesheetRow
+		for _, entry := range entries {
+			// Debug: Print each entry that you're converting
+			fmt.Printf("Converting entry: Date=%s, Client=%s, Hours=%d\n",
+				entry.Date, entry.Client_name, entry.Client_hours)
+
+			row := printExcel.TimesheetRow{
+				Date:          entry.Date,
+				ClientName:    entry.Client_name,
+				ClientHours:   float64(entry.Client_hours),
+				TrainingHours: float64(entry.Training_hours),
+				VacationHours: float64(entry.Vacation_hours),
+				IdleHours:     float64(entry.Idle_hours),
+				HolidayHours:  float64(entry.Holiday_hours),
+				SickHours:     float64(entry.Sick_hours),
+			}
+			timesheetRows = append(timesheetRows, row)
+		}
+
+		fmt.Printf("Total timesheet rows created: %d\n", len(timesheetRows))
+
+		// Export to Excel
+		if err := printExcel.TimesheetToExcel(timesheetRows); err != nil {
+			return "", err
+		}
+
+		return "Timesheet.xlsx", nil
+	} else {
+		fmt.Println("printing to pdf...")
+		return printPDF.TimesheetToPDF(content, sendAsEmail)
 	}
-	return false
 }
 
 func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -297,21 +369,21 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.SendAsEmail):
-
+			// Send as email (PDF or Excel based on configuration)
 			sendAsEmail := true
-			filename, err := printPDF.TimesheetToPDF(m.View(), sendAsEmail)
+			filename, err := sendDocument(m.View(), sendAsEmail, m.currentYear, m.currentMonth)
 			if err != nil {
-				return m, tea.Printf("Error printing timesheet: %v", err)
+				return m, tea.Printf("Error sending timesheet: %v", err)
 			}
-			return m, tea.Printf("Timesheet saved to %s", filename)
+			return m, tea.Printf("Timesheet saved to %s and sent as email", filename)
 
 		case key.Matches(msg, m.keys.Print):
+			// Print without emailing (PDF or Excel based on configuration)
 			sendAsEmail := false
-			filename, err := printPDF.TimesheetToPDF(m.View(), sendAsEmail)
+			filename, err := sendDocument(m.View(), sendAsEmail, m.currentYear, m.currentMonth)
 			if err != nil {
 				return m, tea.Printf("Error printing timesheet: %v", err)
 			}
-
 			return m, tea.Printf("Timesheet saved to %s", filename)
 
 		case key.Matches(msg, m.keys.YankEntry):

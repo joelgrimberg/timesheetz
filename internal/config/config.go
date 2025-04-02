@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -13,15 +14,16 @@ import (
 )
 
 type Config struct {
-	Name           string `json:"name"`
-	CompanyName    string `json:"companyName"`
-	FreeSpeech     string `json:"FreeSpeech"`
-	StartAPIServer bool   `json:"startApiServer"`
-	SendToOthers   bool   `json:"sendToOthers"`
-	RecipientEmail string `json:"recipientEmail,omitempty"`
-	SenderEmail    string `json:"senderEmail,omitempty"`
-	ReplyToEmail   string `json:"replyToEmail,omitempty"`
-	ResendAPIKey   string `json:"resendApiKey,omitempty"`
+	Name             string `json:"name"`
+	CompanyName      string `json:"companyName"`
+	FreeSpeech       string `json:"FreeSpeech"`
+	StartAPIServer   bool   `json:"startApiServer"`
+	SendDocumentType string `json:"sendDocumentType"`
+	SendToOthers     bool   `json:"sendToOthers"`
+	RecipientEmail   string `json:"recipientEmail,omitempty"`
+	SenderEmail      string `json:"senderEmail,omitempty"`
+	ReplyToEmail     string `json:"replyToEmail,omitempty"`
+	ResendAPIKey     string `json:"resendApiKey,omitempty"`
 }
 
 func GetStartAPIServer() bool {
@@ -32,15 +34,16 @@ func GetStartAPIServer() bool {
 	}
 
 	var configData struct {
-		Name           string `json:"name"`
-		CompanyName    string `json:"companyName"`
-		FreeSpeech     string `json:"FreeSpeech"`
-		StartApiServer bool   `json:"startApiServer"`
-		SendToOthers   bool   `json:"sendToOthers"`
-		RecipientEmail string `json:"recipientEmail"`
-		SenderEmail    string `json:"senderEmail"`
-		ReplyToEmail   string `json:"replyToEmail"`
-		ResendApiKey   string `json:"resendApiKey"`
+		Name             string `json:"name"`
+		CompanyName      string `json:"companyName"`
+		FreeSpeech       string `json:"FreeSpeech"`
+		SendDocumentType string `json:"sendDocumentType"`
+		StartApiServer   bool   `json:"startApiServer"`
+		SendToOthers     bool   `json:"sendToOthers"`
+		RecipientEmail   string `json:"recipientEmail"`
+		SenderEmail      string `json:"senderEmail"`
+		ReplyToEmail     string `json:"replyToEmail"`
+		ResendApiKey     string `json:"resendApiKey"`
 	}
 
 	if err := json.Unmarshal(configFile, &configData); err != nil {
@@ -63,7 +66,7 @@ func checkConfig() bool {
 }
 
 // GetEmailConfig reads the configuration file and returns email-related settings
-func GetEmailConfig() (name string, sendToOthers bool, recipientEmail, senderEmail, replyToEmail, resendAPIKey string, err error) {
+func GetEmailConfig() (name string, companysendToOthers bool, recipientEmail, senderEmail, replyToEmail, resendAPIKey string, err error) {
 	configFile, err := os.ReadFile("config.json")
 	if err != nil {
 		return "", false, "", "", "", "", fmt.Errorf("error reading config file: %w", err)
@@ -78,15 +81,33 @@ func GetEmailConfig() (name string, sendToOthers bool, recipientEmail, senderEma
 		config.SenderEmail, config.ReplyToEmail, config.ResendAPIKey, nil
 }
 
-func GetUserConfig() (name, companyName, freeSpeech string, err error) {
+func GetDocumentType() string {
+	configFile, err := os.ReadFile("config.json")
+	if err != nil {
+		log.Printf("error reading config file: %v", err)
+		return ""
+	}
+	var config struct {
+		SendDocumentType string `json:"sendDocumentType"`
+	}
+	if err := json.Unmarshal(configFile, &config); err != nil {
+		log.Printf("error parsing config JSON: %v", err)
+		return ""
+	}
+	return config.SendDocumentType
+}
+
+func GetUserConfig() (name string, companyName string, freeSpeech string, err error) {
 	configFile, err := os.ReadFile("config.json")
 	if err != nil {
 		return "", "", "", fmt.Errorf("error reading config file: %w", err)
 	}
+
 	var config Config
 	if err := json.Unmarshal(configFile, &config); err != nil {
 		return "", "", "", fmt.Errorf("error parsing config JSON: %w", err)
 	}
+
 	return config.Name, config.CompanyName, config.FreeSpeech, nil
 }
 
@@ -139,11 +160,23 @@ func RequireConfig() {
 		// Email configuration
 		huh.NewGroup(
 			huh.NewConfirm().
-				Title("Would you like to be able to send the timesheet to someone who loves corny timesheetz ?").
+				Title("Do you want to send the timesheet to others?").
 				Value(&config.SendToOthers).
 				Affirmative("Yes").
 				Negative("No"),
 		),
+
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("What format would you like to send the timesheet in?").
+				Options(
+					huh.NewOption("PDF", "pdf"),
+					huh.NewOption("Excel", "excel"),
+				).
+				Value(&config.SendDocumentType),
+		).WithHideFunc(func() bool {
+			return !config.SendToOthers
+		}),
 
 		// Conditional email-related questions
 		huh.NewGroup(
@@ -184,7 +217,7 @@ func RequireConfig() {
 				Value(&config.ResendAPIKey).
 				Title("What is your Resend API key?").
 				Placeholder("re_123456789").
-				Password(true).
+				EchoMode(huh.EchoModePassword).
 				Validate(func(s string) error {
 					if s == "" && config.SendToOthers {
 						return fmt.Errorf("Resend API key is required")
@@ -237,6 +270,7 @@ func RequireConfig() {
 		summary += fmt.Sprintf("Send to Others: %s\n", highlight.Render(strconv.FormatBool(config.SendToOthers)))
 
 		if config.SendToOthers {
+			summary += fmt.Sprintf("Document Type: %s\n", highlight.Render(config.SendDocumentType))
 			summary += fmt.Sprintf("Recipient Email: %s\n", highlight.Render(config.RecipientEmail))
 			summary += fmt.Sprintf("Sender Email: %s\n", highlight.Render(config.SenderEmail))
 			summary += fmt.Sprintf("Reply-To Email: %s\n", highlight.Render(config.ReplyToEmail))

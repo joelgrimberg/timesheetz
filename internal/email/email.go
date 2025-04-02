@@ -15,6 +15,10 @@ func EmailAttachment(filename string) {
 		fmt.Println("Error loading email configuration:", err.Error())
 		return
 	}
+	// Check if user wants to send EmailAttachment
+	if !sendToOthers {
+		fmt.Println("not sending to others")
+	}
 
 	client := resend.NewClient(apiKey)
 
