@@ -433,7 +433,7 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.yankedEntry.HolidayHours +
 				m.yankedEntry.SickHours
 
-			// Create or update the entry
+			// Create entry object
 			entry := db.TimesheetEntry{
 				Date:           selectedDate,
 				Client_name:    m.yankedEntry.ClientName,
@@ -446,8 +446,17 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Total_hours:    totalHours,
 			}
 
-			// Save to database
-			err := db.AddTimesheetEntry(entry)
+			// Check if an entry already exists for this date
+			existingEntry, err := db.GetTimesheetEntryByDate(selectedDate)
+			if err == nil {
+				// Entry exists, update it
+				entry.Id = existingEntry.Id // Keep the same ID
+				err = db.UpdateTimesheetEntry(entry)
+			} else {
+				// Entry doesn't exist, add a new one
+				err = db.AddTimesheetEntry(entry)
+			}
+
 			if err != nil {
 				return m, tea.Printf("Error saving entry: %v", err)
 			}

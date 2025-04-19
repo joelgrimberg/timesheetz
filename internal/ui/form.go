@@ -235,6 +235,13 @@ func (m FormModel) handleSubmit() tea.Cmd {
 		}
 	}
 
+	holidayHours, err := parseHours(m.inputs[holidayHoursField].Value())
+	if err != nil {
+		return func() tea.Msg {
+			return errMsg(fmt.Errorf("invalid holiday hours: %v", err))
+		}
+	}
+
 	sickHours, err := parseHours(m.inputs[sickHoursField].Value())
 	if err != nil {
 		return func() tea.Msg {
@@ -242,14 +249,8 @@ func (m FormModel) handleSubmit() tea.Cmd {
 		}
 	}
 
-	holidayHours, err := parseHours(m.inputs[holidayHoursField].Value())
-	if err != nil {
-		return func() tea.Msg {
-			return errMsg(fmt.Errorf("invalid holiday hours: %v", err))
-		}
-	}
 	// Calculate total hours
-	totalHours := clientHours + trainingHours + vacationHours + idleHours + sickHours + holidayHours
+	totalHours := clientHours + trainingHours + vacationHours + idleHours + holidayHours + sickHours
 
 	// Save to database
 	entry := db.TimesheetEntry{
@@ -290,9 +291,9 @@ func fieldLabel(i int) string {
 		"Client Hours:",
 		"Training Hours:",
 		"Vacation Hours:",
+		"Idle Hours:",
 		"Holiday Hours:",
 		"Sick Hours:",
-		"Idle Hours:",
 	}
 	return labels[i]
 }

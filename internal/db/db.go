@@ -182,7 +182,7 @@ func AddTimesheetEntry(entry TimesheetEntry) error {
 	return nil
 }
 
-// UpdateTimesheetEntry updates an existing timesheet entry by date
+// UpdateTimesheetEntry updates an existing Timesheet entry by date
 func UpdateTimesheetEntry(entry TimesheetEntry) error {
 	query := `UPDATE timesheet 
               SET client_name = ?, client_hours = ?, 
