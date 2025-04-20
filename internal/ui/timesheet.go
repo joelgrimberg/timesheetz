@@ -556,13 +556,13 @@ func (m TimesheetModel) View() string {
 
 	// Render the footer with totals
 	footerContent := fmt.Sprintf("%-12s %-10s %-20s", "Total:", "", "")
-	footerContent += fmt.Sprintf("           %d", m.columnTotals["clientHours"])
-	footerContent += fmt.Sprintf("           %d", m.columnTotals["trainingHours"])
-	footerContent += fmt.Sprintf("           %d", m.columnTotals["vacationHours"])
-	footerContent += fmt.Sprintf("           %d", m.columnTotals["idleHours"])
-	footerContent += fmt.Sprintf("           %d", m.columnTotals["holidayHours"])
-	footerContent += fmt.Sprintf("           %d", m.columnTotals["sickHours"])
-	footerContent += fmt.Sprintf("           %d", m.columnTotals["totalHours"])
+	footerContent += fmt.Sprintf("%*d", 15-len(fmt.Sprintf("%d", m.columnTotals["clientHours"])), m.columnTotals["clientHours"])
+	footerContent += fmt.Sprintf("%*d", 13-len(fmt.Sprintf("%d", m.columnTotals["trainingHours"])), m.columnTotals["trainingHours"])
+	footerContent += fmt.Sprintf("%*d", 13-len(fmt.Sprintf("%d", m.columnTotals["vacationHours"])), m.columnTotals["vacationHours"])
+	footerContent += fmt.Sprintf("%*d", 13-len(fmt.Sprintf("%d", m.columnTotals["idleHours"])), m.columnTotals["idleHours"])
+	footerContent += fmt.Sprintf("%*d", 13-len(fmt.Sprintf("%d", m.columnTotals["holidayHours"])), m.columnTotals["holidayHours"])
+	footerContent += fmt.Sprintf("%*d", 14-len(fmt.Sprintf("%d", m.columnTotals["sickHours"])), m.columnTotals["sickHours"])
+	footerContent += fmt.Sprintf("%*d", 14-len(fmt.Sprintf("%d", m.columnTotals["totalHours"])), m.columnTotals["totalHours"])
 
 	s += footerStyle.Render(footerContent) + "\n\n"
 
