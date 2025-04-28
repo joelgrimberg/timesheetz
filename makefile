@@ -13,7 +13,7 @@ init:
 
 # Run the application in development mode
 dev:
-	go run ./cmd/timesheet
+	go run ./cmd/timesheet $(ARGS)
 
 # Cleanup
 clean:

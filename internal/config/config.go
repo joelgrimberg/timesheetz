@@ -220,7 +220,7 @@ func RequireConfig() {
 				EchoMode(huh.EchoModePassword).
 				Validate(func(s string) error {
 					if s == "" && config.SendToOthers {
-						return fmt.Errorf("Resend API key is required")
+						return fmt.Errorf("resend API key is required")
 					}
 					return nil
 				}),

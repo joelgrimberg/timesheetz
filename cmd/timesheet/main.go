@@ -51,10 +51,28 @@ func setupLogging() *os.File {
 }
 
 func initDatabase() {
-	dbPath := getDBPath()
+	// Add a --no-tui flag
+	noTUI := flag.Bool("no-tui", false, "Run only the API server without the TUI")
 
 	initFlag := flag.Bool("init", false, "Initialize the database")
 	flag.Parse()
+
+	// Connect to the database
+	dbPath := getDBPath()
+	err := db.Connect(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to connect to the database: %v", err)
+	}
+
+	// Check if --no-tui is set and handle it early
+	if *noTUI {
+		log.Println("Starting API server in --no-tui mode...")
+		apiP := tea.NewProgram(ui.NewAppModel())
+		handler.StartServer(apiP)
+
+		// Keep the application running in the background
+		select {}
+	}
 
 	// Check if initialization is requested
 	if *initFlag {
@@ -67,12 +85,6 @@ func initDatabase() {
 		if len(flag.Args()) == 0 {
 			os.Exit(0)
 		}
-	}
-
-	// Connect to the database
-	err := db.Connect(dbPath)
-	if err != nil {
-		log.Fatalf("Failed to connect to the database: %v", err)
 	}
 }
 
@@ -104,10 +116,9 @@ func main() {
 	initDatabase()
 	defer db.Close()
 
-	// read configuration file (and create if it doesn't exist)
+	// Read configuration file (and create if it doesn't exist)
 	config.RequireConfig()
 
-	// TODO: use the same app instance
 	// Initialize the app with timesheet as the default view
 	app := ui.NewAppModel()
 	if config.GetStartAPIServer() {

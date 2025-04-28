@@ -45,9 +45,20 @@ Run the application in dev mode as a TUI with the following command:
 make dev
 ```
 
+Run the appliucation as a background service with the --no-tui flag:
+
+```
+make dev ARGS="--no-tui"
+```
+
 The application uses keyboard shortcuts for navigation and actions. See the
 [keyboard shortcuts guide](docs/shortcuts.md) for a comprehensive list of
 available commands.
+
+## Development
+
+within the config file, make sure to set mode to "development" to not clutter
+your production data
 
 ## Logging
 
