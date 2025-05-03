@@ -66,16 +66,23 @@ func GetAPIPort() int {
 	// Fall back to config file
 	configFile, err := os.ReadFile("config.json")
 	if err != nil {
-		log.Printf("error reading config file: %v", err)
-		return 8080 // Default port
+		fmt.Println("Error: No port specified. Please either:")
+		fmt.Println("  1. Add 'apiPort' to your config.json file")
+		fmt.Println("  2. Run the program with --port flag")
+		fmt.Println("  3. Run the program with --no-tui flag if you don't need the API server")
+		os.Exit(1)
 	}
 	var config Config
 	if err := json.Unmarshal(configFile, &config); err != nil {
-		log.Printf("error parsing config JSON: %v", err)
-		return 8080 // Default port
+		fmt.Println("Error: Invalid config.json file. Please check your configuration.")
+		os.Exit(1)
 	}
 	if config.APIPort == 0 {
-		return 8080 // Default port if not set
+		fmt.Println("Error: No port specified. Please either:")
+		fmt.Println("  1. Add 'apiPort' to your config.json file")
+		fmt.Println("  2. Run the program with --port flag")
+		fmt.Println("  3. Run the program with --no-tui flag if you don't need the API server")
+		os.Exit(1)
 	}
 	return config.APIPort
 }
