@@ -23,6 +23,7 @@ type flags struct {
 	help    bool
 	verbose bool
 	dev     bool
+	port    int
 }
 
 // setupFlags defines and parses command line flags
@@ -33,6 +34,7 @@ func setupFlags() flags {
 	helpFlag := flag.Bool("help", false, "Show help message")
 	verboseFlag := flag.Bool("verbose", false, "Show detailed output")
 	devFlag := flag.Bool("dev", false, "Run in development mode (uses local database)")
+	portFlag := flag.Int("port", 0, "Specify the port for the API server")
 
 	// Custom usage message
 	flag.Usage = func() {
@@ -45,6 +47,7 @@ func setupFlags() flags {
 		fmt.Fprintf(os.Stderr, "  %s --help          Show this help message\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --verbose       Show detailed output\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --dev           Run in development mode\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --port 3000     Run API server on port 3000\n", os.Args[0])
 	}
 
 	// Parse flags
@@ -56,6 +59,7 @@ func setupFlags() flags {
 		help:    *helpFlag,
 		verbose: *verboseFlag,
 		dev:     *devFlag,
+		port:    *portFlag,
 	}
 }
 
@@ -92,10 +96,16 @@ func main() {
 		config.SetRuntimeDevMode(true)
 	}
 
+	// If port flag is set, set runtime port
+	if flags.port != 0 {
+		log.Println("Port flag detected:", flags.port)
+		config.SetRuntimePort(flags.port)
+	}
+
 	// Initialize the database
 	dbPath := db.GetDBPath()
 	log.Printf("Database path: %s", dbPath)
-	
+
 	// Check if database exists, if not initialize it
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		log.Println("Database does not exist, initializing...")
@@ -140,9 +150,10 @@ func main() {
 	// Handle no-tui mode
 	if flags.noTUI {
 		log.Println("Starting API server in --no-tui mode...")
+		// Start the API server
 		handler.StartServer(p, refreshChan)
-		// Keep the application running in the background
-		select {}
+		// The server will keep running until interrupted
+		// No need for select{} as StartServer blocks
 	}
 
 	if config.GetStartAPIServer() {

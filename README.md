@@ -59,6 +59,26 @@ Run the application as a background service with the --no-tui flag:
 make dev ARGS="--no-tui"
 ```
 
+### Command-line Flags
+
+The application supports the following command-line flags:
+
+- `--no-tui`: Run only the API server without the TUI
+- `--port <number>`: Specify the port for the API server (default: 8080)
+- `--dev`: Run in development mode (uses local database)
+- `--init`: Initialize the database
+- `--help`: Show help message
+- `--verbose`: Show detailed output
+
+Example:
+```bash
+# Run API server on port 3000 in development mode
+./timesheet --no-tui --port 3000 --dev
+
+# Show help message
+./timesheet --help
+```
+
 The application uses keyboard shortcuts for navigation and actions. See the
 [keyboard shortcuts guide](docs/shortcuts.md) for a comprehensive list of
 available commands.

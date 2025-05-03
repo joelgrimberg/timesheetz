@@ -17,26 +17,67 @@ import (
 
 // Runtime development mode flag
 var runtimeDevMode bool
+var runtimePort int
 
 // Config represents the application configuration
 type Config struct {
-	StartAPIServer   bool   `json:"startAPIServer"`
+	// User Information
+	Name        string `json:"name"`
+	CompanyName string `json:"companyName"`
+	FreeSpeech  string `json:"freeSpeech"`
+
+	// API Server Configuration
+	StartAPIServer bool `json:"startAPIServer"`
+	APIPort        int  `json:"apiPort"`
+
+	// Development Settings
+	DevelopmentMode bool `json:"developmentMode"`
+
+	// Document Settings
 	SendDocumentType string `json:"sendDocumentType"`
-	Name            string `json:"name"`
-	CompanyName     string `json:"companyName"`
-	FreeSpeech      string `json:"freeSpeech"`
-	SendToOthers    bool   `json:"sendToOthers"`
-	RecipientEmail  string `json:"recipientEmail"`
-	SenderEmail     string `json:"senderEmail"`
-	ReplyToEmail    string `json:"replyToEmail"`
-	ResendAPIKey    string `json:"resendAPIKey"`
-	DevelopmentMode bool   `json:"developmentMode"`
+
+	// Email Configuration
+	SendToOthers   bool   `json:"sendToOthers"`
+	RecipientEmail string `json:"recipientEmail"`
+	SenderEmail    string `json:"senderEmail"`
+	ReplyToEmail   string `json:"replyToEmail"`
+	ResendAPIKey   string `json:"resendAPIKey"`
 }
 
 // SetRuntimeDevMode sets the runtime development mode
 func SetRuntimeDevMode(devMode bool) {
 	runtimeDevMode = devMode
 	logging.Log("Runtime development mode set to: %v", devMode)
+}
+
+// SetRuntimePort sets the runtime API port
+func SetRuntimePort(port int) {
+	runtimePort = port
+	logging.Log("Runtime API port set to: %v", port)
+}
+
+// GetAPIPort returns the API port to use
+func GetAPIPort() int {
+	// Check runtime flag first
+	if runtimePort != 0 {
+		return runtimePort
+	}
+
+	// Fall back to config file
+	configFile, err := os.ReadFile("config.json")
+	if err != nil {
+		log.Printf("error reading config file: %v", err)
+		return 8080 // Default port
+	}
+	var config Config
+	if err := json.Unmarshal(configFile, &config); err != nil {
+		log.Printf("error parsing config JSON: %v", err)
+		return 8080 // Default port
+	}
+	if config.APIPort == 0 {
+		return 8080 // Default port if not set
+	}
+	return config.APIPort
 }
 
 func GetStartAPIServer() bool {
@@ -128,13 +169,34 @@ func RequireConfig() {
 	configPath := GetConfigPath()
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		config := Config{
-			StartAPIServer:   true,
+			// User Information
+			Name:        "",
+			CompanyName: "",
+			FreeSpeech:  "",
+
+			// API Server Configuration
+			StartAPIServer: true,
+			APIPort:        8080,
+
+			// Development Settings
+			DevelopmentMode: false,
+
+			// Document Settings
 			SendDocumentType: "pdf",
-			DevelopmentMode:  false,
+
+			// Email Configuration
+			SendToOthers:   false,
+			RecipientEmail: "",
+			SenderEmail:    "",
+			ReplyToEmail:   "",
+			ResendAPIKey:   "",
 		}
 
 		// Should we run in accessible mode?
 		accessible, _ := strconv.ParseBool(os.Getenv("ACCESSIBLE"))
+
+		// Create a string variable for port input
+		portStr := "8080"
 
 		form := huh.NewForm(
 			huh.NewGroup(huh.NewNote().
@@ -144,7 +206,7 @@ func RequireConfig() {
 				NextLabel("Next"),
 			),
 
-			// Basic configuration
+			// User Information
 			huh.NewGroup(
 				huh.NewInput().
 					Value(&config.Name).
@@ -163,13 +225,34 @@ func RequireConfig() {
 					Title("What else do you want to share (will be put below the company name)").
 					Placeholder("Uni Corn").
 					Description("Free Speech"),
+			),
 
+			// API Server Configuration
+			huh.NewGroup(
 				huh.NewConfirm().
 					Title("Do you want to start the API server every time you start the app?").
 					Value(&config.StartAPIServer).
 					Affirmative("Yes").
 					Negative("No"),
 
+				huh.NewInput().
+					Value(&portStr).
+					Title("What port should the API server run on?").
+					Placeholder("8080").
+					Validate(func(s string) error {
+						port, err := strconv.Atoi(s)
+						if err != nil {
+							return fmt.Errorf("port must be a number")
+						}
+						if port < 1 || port > 65535 {
+							return fmt.Errorf("port must be between 1 and 65535")
+						}
+						return nil
+					}),
+			),
+
+			// Development Settings
+			huh.NewGroup(
 				huh.NewConfirm().
 					Title("Do you want to enable development mode?").
 					Value(&config.DevelopmentMode).
@@ -178,7 +261,18 @@ func RequireConfig() {
 					Description("Development mode uses a local database in the current directory."),
 			),
 
-			// Email configuration
+			// Document Settings
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("What document type do you want to use for exports?").
+					Options(
+						huh.NewOption("PDF", "pdf"),
+						huh.NewOption("Excel", "excel"),
+					).
+					Value(&config.SendDocumentType),
+			),
+
+			// Email Configuration
 			huh.NewGroup(
 				huh.NewConfirm().
 					Title("Would you like to be able to send the timesheet to someone who loves corny timesheetz?").
@@ -244,6 +338,14 @@ func RequireConfig() {
 			os.Exit(1)
 		}
 
+		// Convert port string to int
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			fmt.Println("Invalid port number:", err)
+			os.Exit(1)
+		}
+		config.APIPort = port
+
 		// Prepare and write config
 		prepareConfig := func() {
 			SaveConfig(config)
@@ -263,11 +365,23 @@ func RequireConfig() {
 			highlight := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 
 			summary := fmt.Sprintf("%s\n\n", titleStyle.Render("CORNIFIGURATION COMPLETE"))
+
+			// User Information
 			summary += fmt.Sprintf("Name: %s\n", highlight.Render(config.Name))
 			summary += fmt.Sprintf("Company: %s\n", highlight.Render(config.CompanyName))
 			summary += fmt.Sprintf("Free Speech: %s\n", highlight.Render(config.FreeSpeech))
+
+			// API Server Configuration
 			summary += fmt.Sprintf("Start API Server: %s\n", highlight.Render(strconv.FormatBool(config.StartAPIServer)))
+			summary += fmt.Sprintf("API Port: %s\n", highlight.Render(strconv.Itoa(config.APIPort)))
+
+			// Development Settings
 			summary += fmt.Sprintf("Development Mode: %s\n", highlight.Render(strconv.FormatBool(config.DevelopmentMode)))
+
+			// Document Settings
+			summary += fmt.Sprintf("Document Type: %s\n", highlight.Render(config.SendDocumentType))
+
+			// Email Configuration
 			summary += fmt.Sprintf("Send to Others: %s\n", highlight.Render(strconv.FormatBool(config.SendToOthers)))
 
 			if config.SendToOthers {

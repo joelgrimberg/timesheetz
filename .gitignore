@@ -41,3 +41,5 @@ logo.jpg
 
 # Test database
 timesheet.db
+timesheet.db-shm
+timesheet.db-wal
