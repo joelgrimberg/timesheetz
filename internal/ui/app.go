@@ -61,11 +61,21 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			year := m.TimesheetView.currentYear
 			month := m.TimesheetView.currentMonth
 			
+			// Remember current cursor position
+			cursorRow := m.TimesheetView.cursorRow
+			
 			// Generate a fresh table for the current month
 			table, totals, err := generateMonthTable(year, month)
 			if err == nil {
 				m.TimesheetView.table = table
 				m.TimesheetView.columnTotals = totals
+				
+				// Restore cursor position if it's within bounds
+				rowCount := len(m.TimesheetView.table.Rows())
+				if cursorRow >= 0 && cursorRow < rowCount {
+					m.TimesheetView.table.SetCursor(cursorRow)
+					m.TimesheetView.cursorRow = cursorRow
+				}
 			}
 			
 			// Return a command to clear the screen
