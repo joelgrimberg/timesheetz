@@ -17,7 +17,7 @@ type ApiMsg struct {
 	IP string
 }
 
-func StartServer(p *tea.Program) {
+func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 	// Set Gin to Release Mode
 	gin.SetMode(gin.ReleaseMode)
 
@@ -34,10 +34,6 @@ func StartServer(p *tea.Program) {
 
 	// Middleware to extract and convert IP address to IPv4 if necessary
 	router.Use(middleware.RetreiveIP())
-
-	// Get the refresh channel from the program
-	app := p.Model().(ui.AppModel)
-	refreshChan := app.GetRefreshChan()
 
 	// Helper function to send refresh message
 	sendRefresh := func() {
@@ -110,7 +106,24 @@ func StartServer(p *tea.Program) {
 			Sick_hours:     req.SickHours,
 		}
 
-		// Call the AddTimesheetEntry function
+		// Check if an entry already exists for this date
+		existingEntry, err := db.GetTimesheetEntryByDate(req.Date)
+		if err == nil {
+			// Entry exists, update it
+			entry.Id = existingEntry.Id // Keep the same ID
+			err = db.UpdateTimesheetEntry(entry)
+			if err != nil {
+				context.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update timesheet entry: " + err.Error()})
+				return
+			}
+			// Send refresh message
+			sendRefresh()
+			// Return success response
+			context.JSON(http.StatusOK, gin.H{"message": "🎉 Timesheet entry updated successfully"})
+			return
+		}
+
+		// No existing entry, create a new one
 		err = db.AddTimesheetEntry(entry)
 		if err != nil {
 			context.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create timesheet entry: " + err.Error()})

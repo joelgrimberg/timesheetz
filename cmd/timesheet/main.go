@@ -94,11 +94,17 @@ func main() {
 		}
 	}
 
+	// Initialize the app with timesheet as the default view
+	app := ui.NewAppModel()
+	refreshChan := app.GetRefreshChan()
+
+	// Create the UI program first
+	p := tea.NewProgram(app)
+
 	// Handle no-tui mode
 	if flags.noTUI {
 		log.Println("Starting API server in --no-tui mode...")
-		apiP := tea.NewProgram(ui.NewAppModel())
-		handler.StartServer(apiP)
+		handler.StartServer(p, refreshChan)
 		// Keep the application running in the background
 		select {}
 	}
@@ -106,22 +112,29 @@ func main() {
 	// Read configuration file (and create if it doesn't exist)
 	config.RequireConfig()
 
-	// Initialize the app with timesheet as the default view
-	app := ui.NewAppModel()
 	if config.GetStartAPIServer() {
 		// Start API server in a goroutine before running the UI
 		go func() {
 			log.Println("Starting API server...")
-			apiP := tea.NewProgram(ui.NewAppModel())
-			handler.StartServer(apiP)
+			handler.StartServer(p, refreshChan)
 		}()
 
 		// Give the API server a moment to start
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	// Start a goroutine to handle refresh messages
+	go func() {
+		for {
+			select {
+			case <-refreshChan:
+				// Send refresh message to the UI program
+				p.Send(ui.RefreshMsg{})
+			}
+		}
+	}()
+
 	// Run the UI program
-	p := tea.NewProgram(app)
 	if _, err := p.Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)

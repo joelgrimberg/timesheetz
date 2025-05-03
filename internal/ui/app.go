@@ -55,9 +55,21 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle refresh message
 	if _, ok := msg.(RefreshMsg); ok {
-		// If we're in timesheet mode, refresh the view
+		// When receiving a refresh message, update the current view
 		if m.Mode == TimesheetMode {
-			return m, m.TimesheetView.RefreshCmd()
+			// Get current year and month from the existing view
+			year := m.TimesheetView.currentYear
+			month := m.TimesheetView.currentMonth
+			
+			// Generate a fresh table for the current month
+			table, totals, err := generateMonthTable(year, month)
+			if err == nil {
+				m.TimesheetView.table = table
+				m.TimesheetView.columnTotals = totals
+			}
+			
+			// Return a command to clear the screen
+			return m, tea.ClearScreen
 		}
 		return m, nil
 	}
