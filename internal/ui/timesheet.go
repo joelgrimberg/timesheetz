@@ -30,6 +30,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 	"timesheet/internal/config"
 	"timesheet/internal/db"
@@ -145,13 +146,14 @@ func (k TimesheetKeyMap) FullHelp() [][]key.Binding {
 
 // YankedEntry stores the copied entry data
 type YankedEntry struct {
-	ClientName    string
-	ClientHours   int
-	TrainingHours int
-	VacationHours int
-	IdleHours     int
-	HolidayHours  int
-	SickHours     int
+	Date           string
+	ClientName     string
+	ClientHours    int
+	TrainingHours  int
+	VacationHours  int
+	IdleHours      int
+	HolidayHours   int
+	SickHours      int
 }
 
 // TimesheetModel represents the timesheet view
@@ -368,6 +370,13 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch {
+		case msg.Type == tea.KeyEsc:
+			// Clear yanked entry if any
+			if m.yankedEntry != nil {
+				m.yankedEntry = nil
+				return m, nil
+			}
+
 		case key.Matches(msg, m.keys.SendAsEmail):
 			// Send as email (PDF or Excel based on configuration)
 			sendAsEmail := true
@@ -404,13 +413,14 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sickHours := parseIntWithDefault(row[8])
 
 			m.yankedEntry = &YankedEntry{
-				ClientName:    row[2],
-				ClientHours:   clientHours,
-				TrainingHours: trainingHours,
-				VacationHours: vacationHours,
-				IdleHours:     idleHours,
-				HolidayHours:  holidayHours,
-				SickHours:     sickHours,
+				Date:           row[0],
+				ClientName:     row[2],
+				ClientHours:    clientHours,
+				TrainingHours:  trainingHours,
+				VacationHours:  vacationHours,
+				IdleHours:      idleHours,
+				HolidayHours:   holidayHours,
+				SickHours:      sickHours,
 			}
 
 			return m, tea.Printf("Entry yanked: %s", row[2])
@@ -460,6 +470,9 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return m, tea.Printf("Error saving entry: %v", err)
 			}
+
+			// Clear the yanked entry after successful paste
+			m.yankedEntry = nil
 
 			// Refresh the table but maintain cursor position
 			return m, RefreshPreservingCursor(m.currentYear, m.currentMonth, cursorRow)
@@ -551,8 +564,33 @@ func (m TimesheetModel) View() string {
 	monthYearTitle := fmt.Sprintf("%s %d", m.currentMonth.String(), m.currentYear)
 	s += titleStyle.Render(monthYearTitle) + "\n"
 
+	// Get the table view
+	tableView := m.table.View()
+
+	// If we have a yanked entry, find its row and apply the yanked style
+	if m.yankedEntry != nil {
+		rows := m.table.Rows()
+		for i, row := range rows {
+			date := row[0]
+			// Check if this row matches the yanked entry's date
+			if date == m.yankedEntry.Date {
+				// Split the table view into lines
+				lines := strings.Split(tableView, "\n")
+				// The table has 2 header lines (border + column names)
+				// So we need to add 2 to get to the actual data rows
+				if i+2 < len(lines) {
+					// Apply yanked style to the row
+					lines[i+2] = yankedStyle.Render(lines[i+2])
+					// Rejoin the lines
+					tableView = strings.Join(lines, "\n")
+				}
+				break
+			}
+		}
+	}
+
 	// Render the table
-	s += baseStyle.Render(m.table.View()) + "\n"
+	s += baseStyle.Render(tableView) + "\n"
 
 	// Render the footer with totals
 	footerContent := fmt.Sprintf("%-12s %-10s %-20s", "Total:", "", "")

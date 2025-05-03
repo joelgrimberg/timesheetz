@@ -14,4 +14,8 @@ var (
 	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
 	footerStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
 	weekendStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Dimmer style for weekends
+	yankedStyle  = lipgloss.NewStyle().
+		Background(lipgloss.Color("46")). // Bright green background
+		Foreground(lipgloss.Color("0")).  // Black text for contrast
+		Bold(true)
 )
