@@ -22,6 +22,7 @@ type flags struct {
 	init    bool
 	help    bool
 	verbose bool
+	dev     bool
 }
 
 // setupFlags defines and parses command line flags
@@ -31,6 +32,7 @@ func setupFlags() flags {
 	initFlag := flag.Bool("init", false, "Initialize the database")
 	helpFlag := flag.Bool("help", false, "Show help message")
 	verboseFlag := flag.Bool("verbose", false, "Show detailed output")
+	devFlag := flag.Bool("dev", false, "Run in development mode (uses local database)")
 
 	// Custom usage message
 	flag.Usage = func() {
@@ -42,6 +44,7 @@ func setupFlags() flags {
 		fmt.Fprintf(os.Stderr, "  %s --no-tui        Run only the API server\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --help          Show this help message\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --verbose       Show detailed output\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --dev           Run in development mode\n", os.Args[0])
 	}
 
 	// Parse flags
@@ -52,12 +55,14 @@ func setupFlags() flags {
 		init:    *initFlag,
 		help:    *helpFlag,
 		verbose: *verboseFlag,
+		dev:     *devFlag,
 	}
 }
 
 func main() {
 	// Setup and parse flags
 	flags := setupFlags()
+	log.Println("Flags parsed successfully")
 
 	// Show help and exit if --help is used
 	if flags.help {
@@ -71,23 +76,51 @@ func main() {
 	// Set up logging
 	logFile := logging.SetupLogging()
 	defer logFile.Close()
+	log.Println("Logging setup complete")
 
 	// Set verbose mode
 	logging.SetVerbose(flags.verbose)
+	log.Println("Verbose mode set to:", flags.verbose)
+
+	// Read configuration file (and create if it doesn't exist)
+	config.RequireConfig()
+	log.Println("Config file checked/created")
+
+	// If dev flag is set, set runtime development mode
+	if flags.dev {
+		log.Println("Development mode flag detected")
+		config.SetRuntimeDevMode(true)
+	}
 
 	// Initialize the database
 	dbPath := db.GetDBPath()
-	if err := db.Connect(dbPath); err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
-	defer db.Close()
-
-	// Handle database initialization if requested
-	if flags.init {
+	log.Printf("Database path: %s", dbPath)
+	
+	// Check if database exists, if not initialize it
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		log.Println("Database does not exist, initializing...")
 		if err := db.InitializeDatabase(dbPath); err != nil {
 			log.Fatalf("Error initializing database: %v", err)
 		}
 		log.Println("Database initialized successfully")
+	} else {
+		log.Println("Database file exists")
+	}
+
+	log.Println("Attempting to connect to database...")
+	if err := db.Connect(dbPath); err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+	log.Println("Database connected successfully")
+
+	// Handle database initialization if requested
+	if flags.init {
+		log.Println("Init flag detected, reinitializing database...")
+		if err := db.InitializeDatabase(dbPath); err != nil {
+			log.Fatalf("Error initializing database: %v", err)
+		}
+		log.Println("Database reinitialized successfully")
 		// If just initializing, exit after success
 		if len(flag.Args()) == 0 {
 			os.Exit(0)
@@ -95,11 +128,14 @@ func main() {
 	}
 
 	// Initialize the app with timesheet as the default view
+	log.Println("Initializing UI...")
 	app := ui.NewAppModel()
 	refreshChan := app.GetRefreshChan()
+	log.Println("UI initialized")
 
 	// Create the UI program first
 	p := tea.NewProgram(app)
+	log.Println("UI program created")
 
 	// Handle no-tui mode
 	if flags.noTUI {
@@ -108,9 +144,6 @@ func main() {
 		// Keep the application running in the background
 		select {}
 	}
-
-	// Read configuration file (and create if it doesn't exist)
-	config.RequireConfig()
 
 	if config.GetStartAPIServer() {
 		// Start API server in a goroutine before running the UI
@@ -121,10 +154,12 @@ func main() {
 
 		// Give the API server a moment to start
 		time.Sleep(100 * time.Millisecond)
+		log.Println("API server started")
 	}
 
 	// Start a goroutine to handle refresh messages
 	go func() {
+		log.Println("Starting refresh message handler...")
 		for {
 			select {
 			case <-refreshChan:
@@ -135,8 +170,9 @@ func main() {
 	}()
 
 	// Run the UI program
+	log.Println("Starting UI program...")
 	if _, err := p.Run(); err != nil {
-		fmt.Println("Error running program:", err)
+		log.Printf("Error running program: %v", err)
 		os.Exit(1)
 	}
 }

@@ -644,7 +644,9 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 	// Fetch timesheet entries for the specified month
 	entries, err := db.GetAllTimesheetEntries(year, month)
 	if err != nil {
-		return table.Model{}, columnTotals, fmt.Errorf("error fetching timesheet entries: %v", err)
+		// If there's an error, we'll continue with an empty table
+		log.Printf("Warning: Error fetching timesheet entries: %v", err)
+		entries = []db.TimesheetEntry{}
 	}
 
 	// Create a map of entries by date for faster lookup

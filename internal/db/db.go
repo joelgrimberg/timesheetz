@@ -3,10 +3,12 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+	"timesheet/internal/config"
 	"timesheet/internal/logging"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -16,15 +18,36 @@ var db *sql.DB
 
 // Connect establishes a connection to the database
 func Connect(dbPath string) error {
+	// Close any existing connection
+	if db != nil {
+		db.Close()
+	}
+
 	var err error
 	db, err = sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 
+	// Test the connection
 	err = db.Ping()
 	if err != nil {
-		return err
+		// Close the connection if ping fails
+		db.Close()
+		return fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Set pragmas for better performance
+	_, err = db.Exec("PRAGMA journal_mode=WAL;")
+	if err != nil {
+		db.Close()
+		return fmt.Errorf("failed to set journal mode: %w", err)
+	}
+
+	_, err = db.Exec("PRAGMA synchronous=NORMAL;")
+	if err != nil {
+		db.Close()
+		return fmt.Errorf("failed to set synchronous mode: %w", err)
 	}
 
 	logging.Log("Connected to the database 🍺")
@@ -53,40 +76,66 @@ type TimesheetEntry struct {
 	Holiday_hours  int
 }
 
-// GetDBPath returns the path to the SQLite database file
+// GetDBPath returns the path to the database file
 func GetDBPath() string {
-	// Default path in user's home directory
+	// Check if development mode is enabled
+	if config.GetDevelopmentMode() {
+		// In development mode, use a local database file
+		dbPath := "timesheet.db"
+		logging.Log("Using development database at: %s", dbPath)
+		return dbPath
+	}
+
+	// In production mode, use ~/.config/timesheet/
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		// If there's an error getting home dir, use current directory
-		return "timesheet.db"
+		log.Fatalf("Failed to get user home directory: %v", err)
 	}
 
-	// Create the .timesheet directory if it doesn't exist
-	dbDir := filepath.Join(homeDir, ".config/timesheet")
-	if err := os.MkdirAll(dbDir, 0755); err != nil {
-		// If directory creation fails, use current directory
-		return "timesheet.db"
+	// Create timesheet directory if it doesn't exist
+	timesheetDir := filepath.Join(homeDir, ".config", "timesheet")
+	if err := os.MkdirAll(timesheetDir, 0755); err != nil {
+		log.Fatalf("Failed to create timesheet directory: %v", err)
 	}
 
-	return filepath.Join(dbDir, "timesheet.db")
+	// Ensure directory has correct permissions
+	if err := os.Chmod(timesheetDir, 0755); err != nil {
+		log.Fatalf("Failed to set directory permissions: %v", err)
+	}
+
+	dbPath := filepath.Join(timesheetDir, "timesheet.db")
+	logging.Log("Using production database at: %s", dbPath)
+	return dbPath
 }
 
 // InitializeDatabase creates the database and tables if they don't exist
 func InitializeDatabase(dbPath string) error {
 	// Ensure the directory exists
 	dir := filepath.Dir(dbPath)
-	fmt.Print(dir)
 	if dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory for database: %w", err)
 		}
+		// Ensure directory has correct permissions
+		if err := os.Chmod(dir, 0755); err != nil {
+			return fmt.Errorf("failed to set directory permissions: %w", err)
+		}
+	}
+
+	// Close any existing connection
+	if db != nil {
+		db.Close()
 	}
 
 	var err error
 	db, err = sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// Set database permissions
+	if err := os.Chmod(dbPath, 0644); err != nil {
+		return fmt.Errorf("failed to set database permissions: %w", err)
 	}
 
 	// Create table if it doesn't exist
@@ -110,7 +159,7 @@ func InitializeDatabase(dbPath string) error {
 		return fmt.Errorf("failed to create table: %w", err)
 	}
 
-	fmt.Println("Database initialized successfully 🍺")
+	logging.Log("Database initialized successfully 🍺")
 	return nil
 }
 
@@ -356,3 +405,4 @@ func DeleteTimesheetEntry(id string) error {
 func Ping() error {
 	return db.Ping()
 }
+

@@ -11,7 +11,15 @@ Timesheetz is a timesheet management application with two interfaces:
 - **REST API**: Programmatically manage timesheet entries through HTTP
   endpoints. Supports the same operations as the TUI.
 
-The application stores all entries in a Sqlite database
+The application stores all entries in a Sqlite database and features:
+
+- 📅 Monthly calendar view with weekend indicators
+- 📋 Copy/paste functionality with visual feedback
+- 📊 Automatic total calculations
+- 📤 Export to PDF or Excel
+- 📧 Email integration via Resend.com
+- 🔄 Real-time updates via API
+- ⌨️ Vim-inspired keyboard shortcuts
 
 <img src="docs/images/timesheet.png" width="750" />
 
@@ -45,9 +53,9 @@ Run the application in dev mode as a TUI with the following command:
 make dev
 ```
 
-Run the appliucation as a background service with the --no-tui flag:
+Run the application as a background service with the --no-tui flag:
 
-```
+```bash
 make dev ARGS="--no-tui"
 ```
 
@@ -55,14 +63,28 @@ The application uses keyboard shortcuts for navigation and actions. See the
 [keyboard shortcuts guide](docs/shortcuts.md) for a comprehensive list of
 available commands.
 
+## Configuration
+
+The application can be configured through `config.json`:
+
+- Set document type (PDF/Excel) for exports
+- Configure email settings (requires Resend.com API key)
+- Enable/disable API server
+- Set development mode to avoid cluttering production data
+
 ## Development
 
-within the config file, make sure to set mode to "development" to not clutter
-your production data
+Within the config file, make sure to set mode to "development" to not clutter
+your production data.
 
 ## Logging
 
 Log files can be found in the `logs` directory: ~/.config/timesheet/logs
+
+## API Documentation
+
+The application provides a REST API for programmatic access. See the
+[API documentation](docs/api.md) for available endpoints and examples.
 
 ## TODO
 
