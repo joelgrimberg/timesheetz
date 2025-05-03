@@ -7,6 +7,7 @@ import (
 	"time"
 	"timesheet/api/middleware"
 	"timesheet/internal/db"
+	"timesheet/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,9 @@ type ApiMsg struct {
 }
 
 func StartServer(p *tea.Program) {
+	// Set Gin to Release Mode
+	gin.SetMode(gin.ReleaseMode)
+
 	router := gin.Default()
 
 	// disable trusted proxies functionality
@@ -30,6 +34,19 @@ func StartServer(p *tea.Program) {
 
 	// Middleware to extract and convert IP address to IPv4 if necessary
 	router.Use(middleware.RetreiveIP())
+
+	// Get the refresh channel from the program
+	app := p.Model().(ui.AppModel)
+	refreshChan := app.GetRefreshChan()
+
+	// Helper function to send refresh message
+	sendRefresh := func() {
+		select {
+		case refreshChan <- ui.RefreshMsg{}:
+		default:
+			// Channel is full or closed, ignore
+		}
+	}
 
 	router.GET("/health", func(context *gin.Context) {
 		// Check DB connection
@@ -100,6 +117,9 @@ func StartServer(p *tea.Program) {
 			return
 		}
 
+		// Send refresh message
+		sendRefresh()
+
 		// Return success response
 		context.JSON(http.StatusCreated, gin.H{"message": "🎉 Timesheet entry created successfully"})
 	})
@@ -121,6 +141,9 @@ func StartServer(p *tea.Program) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete timesheet entry: " + err.Error()})
 			return
 		}
+
+		// Send refresh message
+		sendRefresh()
 
 		// Return success response
 		c.JSON(http.StatusOK, gin.H{"message": "Timesheet entry deleted successfully"})
@@ -267,6 +290,9 @@ func StartServer(p *tea.Program) {
 			return
 		}
 
+		// Send refresh message
+		sendRefresh()
+
 		// Return success response
 		c.JSON(http.StatusOK, gin.H{"message": "Timesheet entry updated successfully"})
 	})
@@ -323,6 +349,9 @@ func StartServer(p *tea.Program) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update timesheet entry: " + err.Error()})
 			return
 		}
+
+		// Send refresh message
+		sendRefresh()
 
 		// Return success response
 		c.JSON(http.StatusOK, gin.H{"message": "Timesheet entry updated successfully"})

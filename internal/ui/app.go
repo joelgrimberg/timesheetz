@@ -14,11 +14,15 @@ const (
 	FormMode
 )
 
+// RefreshMsg is sent when the database is updated
+type RefreshMsg struct{}
+
 // AppModel is the top-level model that contains both timesheet and form models
 type AppModel struct {
 	Mode          AppMode
 	TimesheetView TimesheetModel
 	FormView      FormModel
+	refreshChan   chan RefreshMsg
 }
 
 // NewAppModel creates a new app model with timesheet as the default view
@@ -26,6 +30,7 @@ func NewAppModel() AppModel {
 	return AppModel{
 		Mode:          TimesheetMode,
 		TimesheetView: InitialTimesheetModel(),
+		refreshChan:   make(chan RefreshMsg),
 	}
 }
 
@@ -46,6 +51,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keyMsg.Type == tea.KeyCtrlC {
 			return m, tea.Quit
 		}
+	}
+
+	// Handle refresh message
+	if _, ok := msg.(RefreshMsg); ok {
+		// If we're in timesheet mode, refresh the view
+		if m.Mode == TimesheetMode {
+			return m, m.TimesheetView.RefreshCmd()
+		}
+		return m, nil
 	}
 
 	// Handle mode-specific updates
@@ -111,6 +125,11 @@ func (m AppModel) View() string {
 		return m.FormView.View()
 	}
 	return "Unknown mode"
+}
+
+// GetRefreshChan returns the refresh channel
+func (m AppModel) GetRefreshChan() chan RefreshMsg {
+	return m.refreshChan
 }
 
 // Message to return to timesheet mode

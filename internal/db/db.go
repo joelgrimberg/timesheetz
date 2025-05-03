@@ -7,12 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"timesheet/internal/logging"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 var db *sql.DB
 
+// Connect establishes a connection to the database
 func Connect(dbPath string) error {
 	var err error
 	db, err = sql.Open("sqlite3", dbPath)
@@ -25,15 +27,16 @@ func Connect(dbPath string) error {
 		return err
 	}
 
-	fmt.Println("Connected to the database 🍺")
+	logging.Log("Connected to the database 🍺")
 	return nil
 }
 
+// Close closes the database connection
 func Close() {
 	if db != nil {
 		db.Close()
 	}
-	fmt.Println("Disconnected from the database 🍺")
+	logging.Log("Disconnected from the database 🍺")
 }
 
 // TimesheetEntry represents a row in the timesheet table
@@ -48,6 +51,25 @@ type TimesheetEntry struct {
 	Total_hours    int
 	Sick_hours     int
 	Holiday_hours  int
+}
+
+// GetDBPath returns the path to the SQLite database file
+func GetDBPath() string {
+	// Default path in user's home directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// If there's an error getting home dir, use current directory
+		return "timesheet.db"
+	}
+
+	// Create the .timesheet directory if it doesn't exist
+	dbDir := filepath.Join(homeDir, ".config/timesheet")
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		// If directory creation fails, use current directory
+		return "timesheet.db"
+	}
+
+	return filepath.Join(dbDir, "timesheet.db")
 }
 
 // InitializeDatabase creates the database and tables if they don't exist

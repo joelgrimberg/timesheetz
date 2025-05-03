@@ -5,116 +5,103 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 	"timesheet/api/handler"
 	"timesheet/internal/config"
 	"timesheet/internal/db"
+	"timesheet/internal/logging"
 	"timesheet/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
 	_ "github.com/go-sql-driver/mysql"
 )
 
-func setupLogging() *os.File {
-	// Create logs directory inside the user's .config/timesheet folder
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Println("Warning: couldn't get home directory, using current directory for logs")
-		homeDir = "."
-	}
-
-	logDir := filepath.Join(homeDir, ".config/timesheet/logs")
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		log.Println("Warning: couldn't create logs directory:", err)
-		logDir = "."
-	}
-
-	// Use just the date part for daily log files
-	dailyTimestamp := time.Now().Format("2006-01-02")
-	logPath := filepath.Join(logDir, fmt.Sprintf("timesheet_%s.log", dailyTimestamp))
-
-	// Open file with append flag - this will create it if it doesn't exist
-	// or append to it if it does
-	f, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("Error opening log file: %v", err)
-	}
-
-	// Don't close the file here - we want it to stay open for the duration of the program
-	// Instead, we'll defer the close in main()
-
-	log.SetOutput(f)
-	log.Printf("Logging initialized at %s", time.Now().Format("15:04:05"))
-
-	return f
+// Command line flags
+type flags struct {
+	noTUI   bool
+	init    bool
+	help    bool
+	verbose bool
 }
 
-func initDatabase() {
-	// Add a --no-tui flag
+// setupFlags defines and parses command line flags
+func setupFlags() flags {
+	// Define flags
 	noTUI := flag.Bool("no-tui", false, "Run only the API server without the TUI")
-
 	initFlag := flag.Bool("init", false, "Initialize the database")
+	helpFlag := flag.Bool("help", false, "Show help message")
+	verboseFlag := flag.Bool("verbose", false, "Show detailed output")
+
+	// Custom usage message
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage of %s:\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nExamples:\n")
+		fmt.Fprintf(os.Stderr, "  %s --init          Initialize the database\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --no-tui        Run only the API server\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --help          Show this help message\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --verbose       Show detailed output\n", os.Args[0])
+	}
+
+	// Parse flags
 	flag.Parse()
 
-	// Connect to the database
-	dbPath := getDBPath()
-	err := db.Connect(dbPath)
-	if err != nil {
-		log.Fatalf("Failed to connect to the database: %v", err)
+	return flags{
+		noTUI:   *noTUI,
+		init:    *initFlag,
+		help:    *helpFlag,
+		verbose: *verboseFlag,
+	}
+}
+
+func main() {
+	// Setup and parse flags
+	flags := setupFlags()
+
+	// Show help and exit if --help is used
+	if flags.help {
+		flag.Usage()
+		os.Exit(0)
 	}
 
-	// Check if --no-tui is set and handle it early
-	if *noTUI {
-		log.Println("Starting API server in --no-tui mode...")
-		apiP := tea.NewProgram(ui.NewAppModel())
-		handler.StartServer(apiP)
+	// Clear the screen
+	fmt.Print("\033[H\033[2J")
 
-		// Keep the application running in the background
-		select {}
+	// Set up logging
+	logFile := logging.SetupLogging()
+	defer logFile.Close()
+
+	// Set verbose mode
+	logging.SetVerbose(flags.verbose)
+
+	// Initialize the database
+	dbPath := db.GetDBPath()
+	if err := db.Connect(dbPath); err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
+	defer db.Close()
 
-	// Check if initialization is requested
-	if *initFlag {
+	// Handle database initialization if requested
+	if flags.init {
 		if err := db.InitializeDatabase(dbPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error initializing database: %v\n", err)
-			os.Exit(1)
+			log.Fatalf("Error initializing database: %v", err)
 		}
-		log.Println("Database initialized successfully at:", dbPath)
+		log.Println("Database initialized successfully")
 		// If just initializing, exit after success
 		if len(flag.Args()) == 0 {
 			os.Exit(0)
 		}
 	}
-}
 
-// getDBPath returns the path to the SQLite database file
-func getDBPath() string {
-	// Default path in user's home directory
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		// If there's an error getting home dir, use current directory
-		return "timesheet.db"
+	// Handle no-tui mode
+	if flags.noTUI {
+		log.Println("Starting API server in --no-tui mode...")
+		apiP := tea.NewProgram(ui.NewAppModel())
+		handler.StartServer(apiP)
+		// Keep the application running in the background
+		select {}
 	}
-
-	// Create the .timesheet directory if it doesn't exist
-	dbDir := filepath.Join(homeDir, ".config/timesheet")
-	if err := os.MkdirAll(dbDir, 0755); err != nil {
-		// If directory creation fails, use current directory
-		return "timesheet.db"
-	}
-
-	return filepath.Join(dbDir, "timesheet.db")
-}
-
-func main() {
-	// Set up logging first thing
-	logFile := setupLogging()
-	defer logFile.Close()
-
-	// Initialize the database first
-	initDatabase()
-	defer db.Close()
 
 	// Read configuration file (and create if it doesn't exist)
 	config.RequireConfig()
