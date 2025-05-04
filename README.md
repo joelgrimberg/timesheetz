@@ -20,6 +20,8 @@ The application stores all entries in a Sqlite database and features:
 - 📧 Email integration via Resend.com
 - 🔄 Real-time updates via API
 - ⌨️ Vim-inspired keyboard shortcuts
+- 🔄 Automatic startup on system boot
+- 🛠️ Easy management with control scripts
 
 <img src="docs/images/timesheet.png" width="750" />
 
@@ -40,10 +42,80 @@ The application stores all entries in a Sqlite database and features:
    git clone https://github.com/username/timesheetz.git
    ```
 
-2. Initialize the database:
+2. Build the application for your platform:
+
    ```bash
-   ./go run timesheet --init
+   ./scripts/build.sh
    ```
+
+3. Install the application:
+
+   For macOS:
+   ```bash
+   ./scripts/install-mac.sh
+   ```
+
+   For Windows (run in PowerShell as administrator):
+   ```powershell
+   .\scripts\install-win.ps1
+   ```
+
+   For Linux:
+   ```bash
+   ./scripts/install-linux.sh
+   ```
+
+The installation script will:
+- Install the application in the appropriate system directory
+- Set up automatic startup on system boot
+- Configure necessary permissions
+- Start the application
+
+## Managing the Application
+
+The application comes with a management script that provides easy control over the application lifecycle:
+
+```bash
+# Check application status
+./scripts/manage.sh status
+
+# Stop the application
+./scripts/manage.sh stop
+
+# Start the application
+./scripts/manage.sh start
+
+# Restart the application
+./scripts/manage.sh restart
+
+# Reload the application (graceful reload)
+./scripts/manage.sh reload
+```
+
+### Updating the Application
+
+To update to a newer version:
+
+1. Stop the current version:
+   ```bash
+   ./scripts/manage.sh stop
+   ```
+
+2. Build and install the new version:
+   ```bash
+   ./scripts/build.sh
+   ./scripts/install-mac.sh  # or install-win.ps1 or install-linux.sh
+   ```
+
+3. Start the new version:
+   ```bash
+   ./scripts/manage.sh start
+   ```
+
+Or simply use the restart command:
+```bash
+./scripts/manage.sh restart
+```
 
 ## Usage
 
@@ -99,7 +171,10 @@ your production data.
 
 ## Logging
 
-Log files can be found in the `logs` directory: ~/.config/timesheet/logs
+Log files can be found in the following locations:
+- macOS: `$HOME/Applications/Timesheetz/error.log` and `output.log`
+- Windows: `%LOCALAPPDATA%\Timesheetz\`
+- Linux: Use `journalctl --user -u timesheetz.service`
 
 ## API Documentation
 
