@@ -98,6 +98,9 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 			sendRefresh()
 		})
 
+		// Get last client name
+		api.GET("/last-client", GetLastClientName)
+
 		// Export routes
 		api.GET("/export/pdf", ExportPDF)
 		api.GET("/export/excel", ExportExcel)

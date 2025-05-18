@@ -90,3 +90,13 @@ func ExportExcel(c *gin.Context) {
 	// TODO: Implement Excel export
 	c.JSON(http.StatusNotImplemented, gin.H{"error": "Excel export not implemented yet"})
 }
+
+// GetLastClientName handles GET requests for the last client name
+func GetLastClientName(c *gin.Context) {
+	clientName, err := db.GetLastClientName()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"client_name": clientName})
+}

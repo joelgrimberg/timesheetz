@@ -406,3 +406,16 @@ func Ping() error {
 	return db.Ping()
 }
 
+// GetLastClientName returns the client name from the most recent timesheet entry
+func GetLastClientName() (string, error) {
+	query := `SELECT client_name FROM timesheet ORDER BY date DESC LIMIT 1`
+	var clientName string
+	err := db.QueryRow(query).Scan(&clientName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // Return empty string if no entries exist
+		}
+		return "", fmt.Errorf("failed to get last client name: %w", err)
+	}
+	return clientName, nil
+}
