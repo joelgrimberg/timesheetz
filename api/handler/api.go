@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"time"
 	"timesheet/api/middleware"
 	"timesheet/internal/config"
@@ -48,7 +49,22 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 	// Set Gin to Release Mode
 	gin.SetMode(gin.ReleaseMode)
 
-	router := gin.Default()
+	// Create a custom logger that writes to a file instead of stdout
+	logFile, err := os.OpenFile("gin.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("Failed to open gin log file: %v", err)
+	}
+	defer logFile.Close()
+
+	// Create a custom logger for Gin
+	ginLogger := gin.LoggerWithConfig(gin.LoggerConfig{
+		Output:    logFile,
+		SkipPaths: []string{"/health"}, // Skip logging for health checks
+	})
+
+	router := gin.New() // Use New() instead of Default() to avoid default middleware
+	router.Use(ginLogger)
+	router.Use(gin.Recovery())
 
 	// disable trusted proxies functionality
 	router.SetTrustedProxies(nil)
