@@ -51,6 +51,6 @@ snapshot:
 
 release:
   github:
-    owner: joel
+    owner: joelgrimberg
     name: timesheet
   prerelease: auto 
