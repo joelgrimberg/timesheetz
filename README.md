@@ -27,49 +27,60 @@ The application stores all entries in a Sqlite database and features:
 
 ## Installation
 
-### Prerequisites
+### Quick Install
 
-- Go 1.24.1 or higher
-- For the email feature to work, you need to have to create an account at
-  https://resend.com and create an API key. You can then use the API key on
-  first launch of the application.
-
-### Application Setup
-
-1. Clone the repository:
-
+1. Download the latest release from the [releases page](https://github.com/yourusername/timesheet/releases)
+2. Extract the archive
+3. Run the installation script:
    ```bash
-   git clone https://github.com/username/timesheetz.git
+   cd timesheet
+   chmod +x scripts/install.sh
+   ./scripts/install.sh
    ```
 
-2. Build the application for your platform:
+### Manual Installation
 
+1. Download the appropriate binary for your system from the [releases page](https://github.com/yourusername/timesheet/releases)
+2. Make the binary executable:
    ```bash
+   chmod +x timesheet-<os>-<arch>
+   ```
+3. Move the binary to a directory in your PATH:
+   ```bash
+   mv timesheet-<os>-<arch> ~/.local/bin/timesheet
+   ```
+
+### Building from Source
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/timesheet.git
+   cd timesheet
+   ```
+
+2. Build the project:
+   ```bash
+   chmod +x scripts/build.sh
    ./scripts/build.sh
    ```
 
-3. Install the application:
-
-   For macOS:
+3. Install the built binary:
    ```bash
-   ./scripts/install-mac.sh
+   ./scripts/install.sh
    ```
 
-   For Windows (run in PowerShell as administrator):
-   ```powershell
-   .\scripts\install-win.ps1
-   ```
+## Usage
 
-   For Linux:
-   ```bash
-   ./scripts/install-linux.sh
-   ```
+After installation, you can run Timesheet using the following command:
 
-The installation script will:
-- Install the application in the appropriate system directory
-- Set up automatic startup on system boot
-- Configure necessary permissions
-- Start the application
+```bash
+timesheet
+```
+
+For more options, run:
+```bash
+timesheet --help
+```
 
 ## Managing the Application
 

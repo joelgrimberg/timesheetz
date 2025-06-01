@@ -1,19 +1,32 @@
 #!/bin/bash
 
-# Create build directory if it doesn't exist
+# Exit on error
+set -e
+
+# Create build directory
 mkdir -p build
 
-# Build for macOS (arm64 and amd64)
+# Build for different platforms
+echo "Building for different platforms..."
+
+# macOS (darwin)
 echo "Building for macOS..."
-GOOS=darwin GOARCH=arm64 go build -o build/timesheetz-mac-arm64 ./cmd/timesheetz
-GOOS=darwin GOARCH=amd64 go build -o build/timesheetz-mac-amd64 ./cmd/timesheetz
+GOOS=darwin GOARCH=amd64 go build -o build/timesheet-darwin-amd64 ./cmd/timesheet
+GOOS=darwin GOARCH=arm64 go build -o build/timesheet-darwin-arm64 ./cmd/timesheet
 
-# Build for Windows
-echo "Building for Windows..."
-GOOS=windows GOARCH=amd64 go build -o build/timesheetz-win-amd64.exe ./cmd/timesheetz
-
-# Build for Linux
+# Linux
 echo "Building for Linux..."
-GOOS=linux GOARCH=amd64 go build -o build/timesheetz-linux-amd64 ./cmd/timesheetz
+GOOS=linux GOARCH=amd64 go build -o build/timesheet-linux-amd64 ./cmd/timesheet
+GOOS=linux GOARCH=arm64 go build -o build/timesheet-linux-arm64 ./cmd/timesheet
 
-echo "Build complete! Executables are in the build directory." 
+# Windows
+echo "Building for Windows..."
+GOOS=windows GOARCH=amd64 go build -o build/timesheet-windows-amd64.exe ./cmd/timesheet
+
+# Create checksums
+echo "Creating checksums..."
+cd build
+shasum -a 256 * > checksums.txt
+cd ..
+
+echo "Build complete! Binaries are in the build directory." 
