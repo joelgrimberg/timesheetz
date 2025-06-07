@@ -53,3 +53,7 @@ com.timesheetz.plist
 ~/Library/Logs/timesheetz.err
 timesheetz.out
 timesheetz.err
+
+# Build artifacts
+build/
+bin/
