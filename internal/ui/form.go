@@ -31,11 +31,12 @@ type errMsg error
 
 // FormModel for timesheet entry
 type FormModel struct {
-	inputs    []textinput.Model
-	focused   int
-	error     string
-	success   string
-	isEditing bool
+	inputs         []textinput.Model
+	focused        int
+	error          string
+	success        string
+	isEditing      bool
+	quitAfterSubmit bool
 }
 
 // Create a new form with initial values
@@ -75,9 +76,10 @@ func InitialFormModelWithDate(date string) FormModel {
 	}
 
 	return FormModel{
-		inputs:    inputs,
-		focused:   0,
-		isEditing: false,
+		inputs:         inputs,
+		focused:        0,
+		isEditing:      false,
+		quitAfterSubmit: false,
 	}
 }
 
@@ -278,7 +280,12 @@ func (m FormModel) handleSubmit() tea.Cmd {
 		}
 	}
 
-	// Return to timesheet view after successful save
+	// If quitAfterSubmit is true, quit the app
+	if m.quitAfterSubmit {
+		return tea.Quit
+	}
+
+	// Otherwise return to timesheet view
 	return ReturnToTimesheet()
 }
 

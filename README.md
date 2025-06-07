@@ -189,6 +189,7 @@ The application supports the following command-line flags:
 
 - `--no-tui`: Run only the API server without the TUI
 - `--tui-only`: Run only the TUI without the API server
+- `--add`: Add a new entry for today and exit
 - `--port <number>`: Specify the port for the API server (default: 8080)
 - `--dev`: Run in development mode (uses local database)
 - `--init`: Initialize the database
@@ -202,6 +203,9 @@ Example:
 
 # Run only the TUI without the API server
 ./timesheet --tui-only
+
+# Add a new entry for today and exit
+./timesheet --add
 
 # Show help message
 ./timesheet --help

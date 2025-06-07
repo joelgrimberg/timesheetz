@@ -20,6 +20,7 @@ import (
 type flags struct {
 	noTUI   bool
 	tuiOnly bool
+	add     bool
 	init    bool
 	help    bool
 	verbose bool
@@ -32,6 +33,7 @@ func setupFlags() flags {
 	// Define flags
 	noTUI := flag.Bool("no-tui", false, "Run only the API server without the TUI")
 	tuiOnly := flag.Bool("tui-only", false, "Run only the TUI without the API server")
+	addFlag := flag.Bool("add", false, "Add a new entry for today and exit")
 	initFlag := flag.Bool("init", false, "Initialize the database")
 	helpFlag := flag.Bool("help", false, "Show help message")
 	verboseFlag := flag.Bool("verbose", false, "Show detailed output")
@@ -47,6 +49,7 @@ func setupFlags() flags {
 		fmt.Fprintf(os.Stderr, "  %s --init          Initialize the database\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --no-tui        Run only the API server\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --tui-only      Run only the TUI without the API server\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --add           Add a new entry for today and exit\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --help          Show this help message\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --verbose       Show detailed output\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --dev           Run in development mode\n", os.Args[0])
@@ -59,6 +62,7 @@ func setupFlags() flags {
 	return flags{
 		noTUI:   *noTUI,
 		tuiOnly: *tuiOnly,
+		add:     *addFlag,
 		init:    *initFlag,
 		help:    *helpFlag,
 		verbose: *verboseFlag,
@@ -143,25 +147,16 @@ func main() {
 
 	// Initialize the app with timesheet as the default view
 	log.Println("Initializing UI...")
-	app := ui.NewAppModel()
+	app := ui.NewAppModel(flags.add)
 	refreshChan := app.GetRefreshChan()
 	log.Println("UI initialized")
 
 	// Create the UI program first
-	p := tea.NewProgram(app)
+	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	log.Println("UI program created")
 
-	// Handle no-tui mode
-	if flags.noTUI {
-		log.Println("Starting API server in --no-tui mode...")
-		// Start the API server
-		handler.StartServer(p, refreshChan)
-		// The server will keep running until interrupted
-		// No need for select{} as StartServer blocks
-	}
-
-	// Start API server if not in tui-only mode
-	if !flags.tuiOnly && config.GetStartAPIServer() {
+	// Start API server if not in tui-only mode or add mode
+	if !flags.tuiOnly && !flags.add && config.GetStartAPIServer() {
 		// Start API server in a goroutine before running the UI
 		go func() {
 			log.Println("Starting API server...")
@@ -185,10 +180,23 @@ func main() {
 		}
 	}()
 
+	// If --add flag is set, start in form mode for today
+	if flags.add {
+		// Switch to form mode
+		app.Mode = ui.FormMode
+		// Initialize form for today
+		app.FormView = ui.InitialFormModel()
+	}
+
 	// Run the UI program
 	log.Println("Starting UI program...")
 	if _, err := p.Run(); err != nil {
 		log.Printf("Error running program: %v", err)
 		os.Exit(1)
 	}
+
+	// Clean up the terminal
+	fmt.Print("\033[?25h") // Show cursor
+	fmt.Print("\033[2J")   // Clear screen
+	fmt.Print("\033[H")    // Move cursor to top-left
 }

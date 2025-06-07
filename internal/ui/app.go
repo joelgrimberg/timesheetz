@@ -26,7 +26,16 @@ type AppModel struct {
 }
 
 // NewAppModel creates a new app model with timesheet as the default view
-func NewAppModel() AppModel {
+func NewAppModel(startInFormMode bool) AppModel {
+	if startInFormMode {
+		form := InitialFormModel()
+		form.quitAfterSubmit = true
+		return AppModel{
+			Mode:          FormMode,
+			FormView:      form,
+			refreshChan:   make(chan RefreshMsg),
+		}
+	}
 	return AppModel{
 		Mode:          TimesheetMode,
 		TimesheetView: InitialTimesheetModel(),
@@ -125,6 +134,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case FormMode:
 		// Check for special message to return to timesheet mode
 		if _, ok := msg.(ReturnToTimesheetMsg); ok {
+			// If quitAfterSubmit is true, quit the app
+			if m.FormView.quitAfterSubmit {
+				return m, tea.Quit
+			}
+			// Otherwise return to timesheet mode
 			m.Mode = TimesheetMode
 			// Refresh the timesheet data
 			return m, m.TimesheetView.RefreshCmd()
