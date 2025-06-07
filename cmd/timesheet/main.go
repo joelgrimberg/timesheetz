@@ -19,6 +19,7 @@ import (
 // Command line flags
 type flags struct {
 	noTUI   bool
+	tuiOnly bool
 	init    bool
 	help    bool
 	verbose bool
@@ -30,6 +31,7 @@ type flags struct {
 func setupFlags() flags {
 	// Define flags
 	noTUI := flag.Bool("no-tui", false, "Run only the API server without the TUI")
+	tuiOnly := flag.Bool("tui-only", false, "Run only the TUI without the API server")
 	initFlag := flag.Bool("init", false, "Initialize the database")
 	helpFlag := flag.Bool("help", false, "Show help message")
 	verboseFlag := flag.Bool("verbose", false, "Show detailed output")
@@ -44,6 +46,7 @@ func setupFlags() flags {
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  %s --init          Initialize the database\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --no-tui        Run only the API server\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --tui-only      Run only the TUI without the API server\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --help          Show this help message\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --verbose       Show detailed output\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --dev           Run in development mode\n", os.Args[0])
@@ -55,6 +58,7 @@ func setupFlags() flags {
 
 	return flags{
 		noTUI:   *noTUI,
+		tuiOnly: *tuiOnly,
 		init:    *initFlag,
 		help:    *helpFlag,
 		verbose: *verboseFlag,
@@ -156,7 +160,8 @@ func main() {
 		// No need for select{} as StartServer blocks
 	}
 
-	if config.GetStartAPIServer() {
+	// Start API server if not in tui-only mode
+	if !flags.tuiOnly && config.GetStartAPIServer() {
 		// Start API server in a goroutine before running the UI
 		go func() {
 			log.Println("Starting API server...")

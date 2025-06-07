@@ -188,6 +188,7 @@ make dev ARGS="--no-tui"
 The application supports the following command-line flags:
 
 - `--no-tui`: Run only the API server without the TUI
+- `--tui-only`: Run only the TUI without the API server
 - `--port <number>`: Specify the port for the API server (default: 8080)
 - `--dev`: Run in development mode (uses local database)
 - `--init`: Initialize the database
@@ -198,6 +199,9 @@ Example:
 ```bash
 # Run API server on port 3000 in development mode
 ./timesheet --no-tui --port 3000 --dev
+
+# Run only the TUI without the API server
+./timesheet --tui-only
 
 # Show help message
 ./timesheet --help
