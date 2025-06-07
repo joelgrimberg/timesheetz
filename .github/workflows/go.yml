@@ -21,8 +21,11 @@ jobs:
       with:
         go-version: '1.24.1'
 
+    - name: Make build script executable
+      run: chmod +x scripts/build.sh
+
     - name: Build
-      run: go build -v ./...
+      run: ./scripts/build.sh
 
     # - name: Test
     #   run: go test -v ./...

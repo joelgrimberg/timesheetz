@@ -29,18 +29,18 @@ The application stores all entries in a Sqlite database and features:
 
 ### Quick Install
 
-1. Download the latest release from the [releases page](https://github.com/yourusername/timesheet/releases)
+1. Download the latest release from the [releases page](https://github.com/joelgrimberg/timesheetz/releases)
 2. Extract the archive
 3. Run the installation script:
    ```bash
-   cd timesheet
+   cd timesheetz
    chmod +x scripts/install.sh
    ./scripts/install.sh
    ```
 
 ### Manual Installation
 
-1. Download the appropriate binary for your system from the [releases page](https://github.com/yourusername/timesheet/releases)
+1. Download the appropriate binary for your system from the [releases page](https://github.com/joelgrimberg/timesheetz/releases)
 2. Make the binary executable:
    ```bash
    chmod +x timesheet-<os>-<arch>
@@ -54,20 +54,61 @@ The application stores all entries in a Sqlite database and features:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/timesheet.git
-   cd timesheet
+   git clone https://github.com/joelgrimberg/timesheetz.git
+   cd timesheetz
    ```
 
 2. Build the project:
    ```bash
-   chmod +x scripts/build.sh
    ./scripts/build.sh
    ```
 
-3. Install the built binary:
+3. Install the Launch Agent (macOS):
    ```bash
    ./scripts/install.sh
    ```
+
+### Auto-start on macOS (Background Launch at Login)
+
+The installation script will:
+- Create a Launch Agent in `~/Library/LaunchAgents`
+- Configure Timesheetz to start at login and run in the background
+- Write logs to `~/Library/Logs/timesheetz.out` and `~/Library/Logs/timesheetz.err`
+
+**To verify or manage the Launch Agent:**
+- Check if it's running:
+  ```bash
+  launchctl list | grep timesheetz
+  ```
+- Stop auto-starting:
+  ```bash
+  launchctl unload ~/Library/LaunchAgents/com.timesheetz.plist
+  ```
+- Remove the Launch Agent:
+  ```bash
+  rm ~/Library/LaunchAgents/com.timesheetz.plist
+  ```
+
+### Running Multiple Instances
+
+When the Launch Agent is running (on port 8080), you can start additional instances of Timesheetz from the CLI:
+
+1. For a terminal UI instance, use a different port:
+   ```bash
+   ./bin/timesheet --port 8081
+   ```
+
+2. For a background instance, use the `--no-tui` flag:
+   ```bash
+   ./bin/timesheet --no-tui --port 8082
+   ```
+
+All instances will share the same database, allowing you to:
+- Have the app running in the background via Launch Agent
+- Use the terminal UI for quick entries or queries
+- Run multiple background instances if needed
+
+**Note:** If you get a port binding error, it means the port is already in use. Try using a different port number.
 
 ## Usage
 
@@ -115,7 +156,7 @@ To update to a newer version:
 2. Build and install the new version:
    ```bash
    ./scripts/build.sh
-   ./scripts/install-mac.sh  # or install-win.ps1 or install-linux.sh
+   ./scripts/install-mac.ps1 or install-win.ps1 or install-linux.sh
    ```
 
 3. Start the new version:

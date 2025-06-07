@@ -24,10 +24,15 @@ jobs:
         with:
           go-version: '1.24'
 
+      - name: Make build script executable
+        run: chmod +x scripts/build.sh
+
+      - name: Build
+        run: ./scripts/build.sh
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:
-          distribution: goreleaser
           version: latest
           args: release --clean
         env:

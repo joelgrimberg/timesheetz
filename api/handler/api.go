@@ -42,6 +42,13 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 	// Check if port is available
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
+		fmt.Printf("\nError: Port %d is already in use. This might be because:\n", port)
+		fmt.Printf("1. Another instance of Timesheetz is already running\n")
+		fmt.Printf("2. Another application is using this port\n\n")
+		fmt.Printf("To fix this, you can:\n")
+		fmt.Printf("1. Stop the other instance\n")
+		fmt.Printf("2. Run Timesheetz with a different port: --port <number>\n")
+		fmt.Printf("   Example: ./bin/timesheet --port 8081\n\n")
 		log.Fatalf("Port %d is not available: %v", port, err)
 	}
 	listener.Close()

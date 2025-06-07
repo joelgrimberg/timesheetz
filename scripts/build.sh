@@ -3,8 +3,9 @@
 # Exit on error
 set -e
 
-# Create build directory
+# Create build and bin directories
 mkdir -p build
+mkdir -p bin
 
 # Build for different platforms
 echo "Building for different platforms..."
@@ -29,4 +30,28 @@ cd build
 shasum -a 256 * > checksums.txt
 cd ..
 
-echo "Build complete! Binaries are in the build directory." 
+# Copy the appropriate binary to bin directory based on current platform
+echo "Creating local binary..."
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    if [[ $(uname -m) == "arm64" ]]; then
+        cp build/timesheet-darwin-arm64 bin/timesheet
+    else
+        cp build/timesheet-darwin-amd64 bin/timesheet
+    fi
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # Linux
+    if [[ $(uname -m) == "aarch64" ]]; then
+        cp build/timesheet-linux-arm64 bin/timesheet
+    else
+        cp build/timesheet-linux-amd64 bin/timesheet
+    fi
+elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+    # Windows
+    cp build/timesheet-windows-amd64.exe bin/timesheet.exe
+fi
+
+# Make the binary executable
+chmod +x bin/timesheet*
+
+echo "Build complete! Binaries are in the build directory and local binary is in bin directory." 

@@ -43,3 +43,13 @@ logo.jpg
 timesheet.db
 timesheet.db-shm
 timesheet.db-wal
+
+# Launch Agent files
+~/Library/LaunchAgents/com.timesheetz.plist
+com.timesheetz.plist
+
+# Launch Agent logs
+~/Library/Logs/timesheetz.out
+~/Library/Logs/timesheetz.err
+timesheetz.out
+timesheetz.err
