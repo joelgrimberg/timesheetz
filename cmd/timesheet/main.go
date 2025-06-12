@@ -183,9 +183,9 @@ func main() {
 	// If --add flag is set, start in form mode for today
 	if flags.add {
 		// Switch to form mode
-		app.Mode = ui.FormMode
+		app.ActiveMode = ui.FormMode
 		// Initialize form for today
-		app.FormView = ui.InitialFormModel()
+		app.FormModel = ui.InitialFormModel()
 	}
 
 	// Run the UI program

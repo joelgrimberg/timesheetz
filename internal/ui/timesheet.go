@@ -28,7 +28,6 @@ package ui
 import (
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -131,7 +130,29 @@ func DefaultTimesheetKeyMap() TimesheetKeyMap {
 
 // ShortHelp returns keybindings to be shown in the mini help view.
 func (k TimesheetKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.GotoToday, k.AddEntry, k.ClearEntry, k.YankEntry, k.PasteEntry, k.Help, k.Quit}
+	return []key.Binding{
+		k.Up,
+		k.Down,
+		k.GotoToday,
+		k.AddEntry,
+		k.ClearEntry,
+		k.YankEntry,
+		k.PasteEntry,
+		k.Help,
+		k.Quit,
+		key.NewBinding(
+			key.WithKeys("<"),
+			key.WithHelp("<", "prev tab"),
+		),
+		key.NewBinding(
+			key.WithKeys(">"),
+			key.WithHelp(">", "next tab"),
+		),
+		key.NewBinding(
+			key.WithKeys("$"),
+			key.WithHelp("$", "training budget"),
+		),
+	}
 }
 
 // FullHelp returns keybindings for the expanded help view.
@@ -141,19 +162,33 @@ func (k TimesheetKeyMap) FullHelp() [][]key.Binding {
 		{k.PrevMonth, k.NextMonth},                                          // second column - month navigation
 		{k.GotoToday, k.Enter, k.AddEntry, k.ClearEntry},                    // third column
 		{k.YankEntry, k.PasteEntry, k.Print, k.SendAsEmail, k.Help, k.Quit}, // fourth column
+		{
+			key.NewBinding(
+				key.WithKeys("<"),
+				key.WithHelp("<", "previous tab"),
+			),
+			key.NewBinding(
+				key.WithKeys(">"),
+				key.WithHelp(">", "next tab"),
+			),
+			key.NewBinding(
+				key.WithKeys("$"),
+				key.WithHelp("$", "training budget"),
+			),
+		},
 	}
 }
 
 // YankedEntry stores the copied entry data
 type YankedEntry struct {
-	Date           string
-	ClientName     string
-	ClientHours    int
-	TrainingHours  int
-	VacationHours  int
-	IdleHours      int
-	HolidayHours   int
-	SickHours      int
+	Date          string
+	ClientName    string
+	ClientHours   int
+	TrainingHours int
+	VacationHours int
+	IdleHours     int
+	HolidayHours  int
+	SickHours     int
 }
 
 // TimesheetModel represents the timesheet view
@@ -258,8 +293,6 @@ func hasYankableData(row []string) bool {
 
 func sendDocument(content string, sendAsEmail bool, year int, month time.Month) (string, error) {
 	format := config.GetDocumentType()
-	fmt.Println(format)
-	fmt.Println("printing to ...")
 
 	if format == "excel" {
 		// Fetch timesheet entries
@@ -268,38 +301,9 @@ func sendDocument(content string, sendAsEmail bool, year int, month time.Month) 
 			return "", fmt.Errorf("error fetching timesheet entries: %v", err)
 		}
 
-		// Debug: Output entries information to a log file
-		logFile, err := os.OpenFile("entries_debug.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			fmt.Printf("Error creating debug log: %v\n", err)
-		} else {
-			defer logFile.Close()
-			fmt.Fprintf(logFile, "Year: %d, Month: %s\n", year, month)
-			fmt.Fprintf(logFile, "Total entries found: %d\n", len(entries))
-			fmt.Fprintf(logFile, "------------------------------------------\n")
-
-			for i, entry := range entries {
-				fmt.Fprintf(logFile, "Entry %d:\n", i+1)
-				fmt.Fprintf(logFile, "  Date: %s\n", entry.Date)
-				fmt.Fprintf(logFile, "  Client: %s\n", entry.Client_name)
-				fmt.Fprintf(logFile, "  Client Hours: %d\n", entry.Client_hours)
-				fmt.Fprintf(logFile, "  Training Hours: %d\n", entry.Training_hours)
-				fmt.Fprintf(logFile, "  Vacation Hours: %d\n", entry.Vacation_hours)
-				fmt.Fprintf(logFile, "  Idle Hours: %d\n", entry.Idle_hours)
-				fmt.Fprintf(logFile, "  Holiday Hours: %d\n", entry.Holiday_hours)
-				fmt.Fprintf(logFile, "  Sick Hours: %d\n", entry.Sick_hours)
-				fmt.Fprintf(logFile, "  Total Hours: %d\n", entry.Total_hours)
-				fmt.Fprintf(logFile, "------------------------------------------\n")
-			}
-		}
-
 		// Convert database entries to TimesheetRow objects
 		var timesheetRows []printExcel.TimesheetRow
 		for _, entry := range entries {
-			// Debug: Print each entry that you're converting
-			fmt.Printf("Converting entry: Date=%s, Client=%s, Hours=%d\n",
-				entry.Date, entry.Client_name, entry.Client_hours)
-
 			row := printExcel.TimesheetRow{
 				Date:          entry.Date,
 				ClientName:    entry.Client_name,
@@ -313,8 +317,6 @@ func sendDocument(content string, sendAsEmail bool, year int, month time.Month) 
 			timesheetRows = append(timesheetRows, row)
 		}
 
-		fmt.Printf("Total timesheet rows created: %d\n", len(timesheetRows))
-
 		// Export to Excel
 		if err := printExcel.TimesheetToExcel(timesheetRows); err != nil {
 			return "", err
@@ -322,9 +324,13 @@ func sendDocument(content string, sendAsEmail bool, year int, month time.Month) 
 
 		return "Timesheet.xlsx", nil
 	} else {
-		fmt.Println("printing to pdf...")
 		return printPDF.TimesheetToPDF(content, sendAsEmail)
 	}
+}
+
+// ClearEntryMsg is sent when an entry is cleared
+type ClearEntryMsg struct {
+	Date string
 }
 
 func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -413,14 +419,14 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sickHours := parseIntWithDefault(row[8])
 
 			m.yankedEntry = &YankedEntry{
-				Date:           row[0],
-				ClientName:     row[2],
-				ClientHours:    clientHours,
-				TrainingHours:  trainingHours,
-				VacationHours:  vacationHours,
-				IdleHours:      idleHours,
-				HolidayHours:   holidayHours,
-				SickHours:      sickHours,
+				Date:          row[0],
+				ClientName:    row[2],
+				ClientHours:   clientHours,
+				TrainingHours: trainingHours,
+				VacationHours: vacationHours,
+				IdleHours:     idleHours,
+				HolidayHours:  holidayHours,
+				SickHours:     sickHours,
 			}
 
 			return m, tea.Printf("Entry yanked: %s", row[2])
@@ -502,15 +508,15 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.ClearEntry):
 			// Get the date from the selected row
 			selectedDate := m.table.SelectedRow()[0]
-			// Remember current cursor position
-			cursorRow := m.table.Cursor()
 			// Delete the entry
 			err := db.DeleteTimesheetEntryByDate(selectedDate)
 			if err != nil {
 				return m, tea.Printf("Error clearing entry: %v", err)
 			}
-			// Refresh the table but maintain cursor position
-			return m, RefreshPreservingCursor(m.currentYear, m.currentMonth, cursorRow)
+			// Send a refresh message to update all views
+			return m, func() tea.Msg {
+				return RefreshMsg{}
+			}
 
 		case key.Matches(msg, m.keys.PrevMonth):
 			// Calculate the previous month

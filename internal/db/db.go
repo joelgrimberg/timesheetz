@@ -138,25 +138,34 @@ func InitializeDatabase(dbPath string) error {
 		return fmt.Errorf("failed to set database permissions: %w", err)
 	}
 
-	// Create table if it doesn't exist
-	createTableSQL := `
-    CREATE TABLE IF NOT EXISTS timesheet (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT NOT NULL,
-        client_name TEXT NOT NULL,
-        client_hours INTEGER DEFAULT NULL,
-        vacation_hours INTEGER DEFAULT NULL,
-        idle_hours INTEGER DEFAULT NULL,
-        training_hours INTEGER DEFAULT NULL,
-        sick_hours INTEGER DEFAULT NULL,
-        holiday_hours INTEGER DEFAULT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_client_name ON timesheet(client_name);
-    `
+	// Execute each statement separately to ensure all tables are created
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS timesheet (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			date TEXT NOT NULL,
+			client_name TEXT NOT NULL,
+			client_hours INTEGER DEFAULT NULL,
+			vacation_hours INTEGER DEFAULT NULL,
+			idle_hours INTEGER DEFAULT NULL,
+			training_hours INTEGER DEFAULT NULL,
+			sick_hours INTEGER DEFAULT NULL,
+			holiday_hours INTEGER DEFAULT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_client_name ON timesheet(client_name);`,
+		`CREATE TABLE IF NOT EXISTS training_budget (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			date TEXT NOT NULL,
+			training_name TEXT NOT NULL,
+			hours INTEGER NOT NULL,
+			cost_without_vat DECIMAL(10,2) NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_training_date ON training_budget(date);`,
+	}
 
-	_, err = db.Exec(createTableSQL)
-	if err != nil {
-		return fmt.Errorf("failed to create table: %w", err)
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("failed to execute statement: %w\nSQL: %s", err, stmt)
+		}
 	}
 
 	logging.Log("Database initialized successfully 🍺")

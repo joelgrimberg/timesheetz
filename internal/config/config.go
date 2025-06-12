@@ -19,6 +19,12 @@ import (
 var runtimeDevMode bool
 var runtimePort int
 
+// TrainingHours represents the training hours configuration
+type TrainingHours struct {
+	YearlyTarget int    `json:"yearlyTarget"`
+	Category     string `json:"category"`
+}
+
 // Config represents the application configuration
 type Config struct {
 	// User Information
@@ -41,7 +47,10 @@ type Config struct {
 	RecipientEmail string `json:"recipientEmail"`
 	SenderEmail    string `json:"senderEmail"`
 	ReplyToEmail   string `json:"replyToEmail"`
-	ResendAPIKey   string `json:"resendAPIKey"`
+	ResendAPIKey   string `json:"resendApiKey"`
+
+	// Training Hours Configuration
+	TrainingHours TrainingHours `json:"trainingHours"`
 }
 
 // SetRuntimeDevMode sets the runtime development mode
@@ -197,6 +206,12 @@ func RequireConfig() {
 			SenderEmail:    "",
 			ReplyToEmail:   "",
 			ResendAPIKey:   "",
+
+			// Training Hours Configuration
+			TrainingHours: TrainingHours{
+				YearlyTarget: 0,
+				Category:     "",
+			},
 		}
 
 		// Should we run in accessible mode?
@@ -446,4 +461,19 @@ func GetDevelopmentMode() bool {
 		return false
 	}
 	return config.DevelopmentMode
+}
+
+// GetConfig reads and returns the configuration from the config file
+func GetConfig() (Config, error) {
+	configFile, err := os.ReadFile("config.json")
+	if err != nil {
+		return Config{}, err
+	}
+
+	var config Config
+	if err := json.Unmarshal(configFile, &config); err != nil {
+		return Config{}, err
+	}
+
+	return config, nil
 }
