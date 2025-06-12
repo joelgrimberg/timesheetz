@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"timesheet/internal/config"
 	"timesheet/internal/db"
 
 	"github.com/gin-gonic/gin"
@@ -192,16 +193,33 @@ func GetTrainingHours(c *gin.Context) {
 		return
 	}
 
+	// Get spent hours from timesheet entries
 	entries, err := db.GetTrainingEntriesForYear(yearInt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	var totalHours int
+	var usedHours int
 	for _, entry := range entries {
-		totalHours += entry.Training_hours
+		usedHours += entry.Training_hours
 	}
 
-	c.JSON(http.StatusOK, gin.H{"total_hours": totalHours})
+	// Get total hours from config
+	config, err := config.GetConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read configuration"})
+		return
+	}
+
+	totalHours := config.TrainingHours.YearlyTarget
+	availableHours := totalHours - usedHours
+
+	// Return all hours information
+	c.JSON(http.StatusOK, gin.H{
+		"year":            yearInt,
+		"total_hours":     totalHours,
+		"used_hours":      usedHours,
+		"available_hours": availableHours,
+	})
 }

@@ -449,27 +449,50 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m TrainingBudgetModel) View() string {
-	var helpView string
-	if m.showHelp {
-		helpView = "\n" + lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Render("Navigation:\n  ↑/↓, k/j: Move up/down\n  ←/→, h/l: Change year\n  ?: Toggle help\n  q: Quit\n\nActions:\n  r: Refresh\n  a: Add entry\n  c: Clear entry\n  y: Yank entry\n\nTabs:\n  <: Previous tab\n  >: Next tab")
-	} else {
-		helpView = "\n" + lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Render("↑/↓: Navigate • ←/→: Change year • ?: Help • q: Quit • r: Refresh • a: Add • c: Clear • y: Yank • </>: Tabs")
+	// Get the table view
+	table := m.table.View()
+
+	// Get training entries for the current year to calculate used hours
+	entries, err := db.GetTrainingEntriesForYear(m.currentYear)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
 	}
 
-	return fmt.Sprintf(
-		"\n%s\n\n%s\n\n%s%s",
-		titleStyle.Render(fmt.Sprintf("Year: %d", m.currentYear)),
-		lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Render(m.table.View()),
-		helpStyle.Render("↑/↓: Navigate • <: Prev tab • >: Next tab • $: Add entry • r: Refresh • q: Quit"),
-		helpView,
+	// Calculate used hours
+	var usedHours int
+	for _, entry := range entries {
+		usedHours += entry.Training_hours
+	}
+
+	// Get budget entries to calculate allocated hours
+	budgetEntries, err := db.GetTrainingBudgetEntriesForYear(m.currentYear)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	// Calculate allocated hours
+	var allocatedHours int
+	for _, entry := range budgetEntries {
+		allocatedHours += entry.Hours
+	}
+
+	// Create the header with year and hours info
+	header := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("Training Budget %d", m.currentYear)),
+		lipgloss.NewStyle().PaddingLeft(2).Render(fmt.Sprintf("Allocated: %d hours", allocatedHours)),
+		lipgloss.NewStyle().PaddingLeft(2).Render(fmt.Sprintf("Used: %d hours", usedHours)),
+		lipgloss.NewStyle().PaddingLeft(2).Render(fmt.Sprintf("Remaining: %d hours", allocatedHours-usedHours)),
 	)
+
+	// Create the help view
+	helpView := ""
+	if m.showHelp {
+		helpView = "\n" + m.help.View(m.keys)
+	}
+
+	// Combine everything
+	return fmt.Sprintf("%s\n%s%s", header, table, helpView)
 }
 
 func (k TrainingBudgetKeyMap) Help() []key.Binding {
