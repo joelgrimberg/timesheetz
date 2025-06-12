@@ -145,6 +145,26 @@ func main() {
 		}
 	}
 
+	// Start the TUI if requested
+	if flags.tuiOnly {
+		log.Println("Starting TUI only mode...")
+		model := ui.NewAppModel(flags.add)
+		p := tea.NewProgram(model, tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
+			log.Fatalf("Error running TUI: %v", err)
+		}
+		os.Exit(0)
+	}
+
+	// If --no-tui flag is set, start only the API server
+	if flags.noTUI {
+		log.Println("Starting API server only mode...")
+		refreshChan := make(chan ui.RefreshMsg)
+		handler.StartServer(nil, refreshChan)
+		// Keep the server running
+		select {}
+	}
+
 	// Initialize the app with timesheet as the default view
 	log.Println("Initializing UI...")
 	app := ui.NewAppModel(flags.add)
