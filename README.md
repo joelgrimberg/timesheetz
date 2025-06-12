@@ -246,3 +246,11 @@ The application provides a REST API for programmatic access. See the
 - [ ] update Readme and setup github pages
 - [ ] Build application in pipeline
 - [ ] Add RayCast extension
+
+- **Training Budget View Enhancements:**
+  - Press `c` while hovering a row to clear (delete) the selected training budget entry.
+  - The view refreshes automatically after deletion.
+
+- **Database Improvements:**
+  - The `training_budget` table is now created automatically in new/clean setups.
+  - Existing databases can be updated manually without affecting current data.
