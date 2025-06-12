@@ -121,6 +121,28 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 			sendRefresh()
 		})
 
+		// Training Budget routes
+		api.GET("/training-budget", func(c *gin.Context) {
+			GetTrainingBudget(c)
+		})
+		api.POST("/training-budget", func(c *gin.Context) {
+			CreateTrainingBudget(c)
+			sendRefresh()
+		})
+		api.PUT("/training-budget", func(c *gin.Context) {
+			UpdateTrainingBudget(c)
+			sendRefresh()
+		})
+		api.DELETE("/training-budget", func(c *gin.Context) {
+			DeleteTrainingBudget(c)
+			sendRefresh()
+		})
+
+		// Training Hours route
+		api.GET("/training-hours", func(c *gin.Context) {
+			GetTrainingHours(c)
+		})
+
 		// Get last client name
 		api.GET("/last-client", GetLastClientName)
 
