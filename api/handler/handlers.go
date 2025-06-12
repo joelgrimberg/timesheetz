@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"timesheet/internal/db"
 
 	"github.com/gin-gonic/gin"
@@ -99,4 +100,108 @@ func GetLastClientName(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"client_name": clientName})
+}
+
+// GetTrainingBudget handles GET requests for training budget entries
+func GetTrainingBudget(c *gin.Context) {
+	year := c.Query("year")
+	if year == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Year parameter is required"})
+		return
+	}
+
+	yearInt, err := strconv.Atoi(year)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid year parameter"})
+		return
+	}
+
+	entries, err := db.GetTrainingBudgetEntriesForYear(yearInt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, entries)
+}
+
+// CreateTrainingBudget handles POST requests to create a new training budget entry
+func CreateTrainingBudget(c *gin.Context) {
+	var entry db.TrainingBudgetEntry
+	if err := c.ShouldBindJSON(&entry); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := db.AddTrainingBudgetEntry(entry); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, entry)
+}
+
+// UpdateTrainingBudget handles PUT requests to update a training budget entry
+func UpdateTrainingBudget(c *gin.Context) {
+	var entry db.TrainingBudgetEntry
+	if err := c.ShouldBindJSON(&entry); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := db.UpdateTrainingBudgetEntry(entry); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, entry)
+}
+
+// DeleteTrainingBudget handles DELETE requests to remove a training budget entry
+func DeleteTrainingBudget(c *gin.Context) {
+	id := c.Query("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID parameter is required"})
+		return
+	}
+
+	idInt, err := strconv.Atoi(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID parameter"})
+		return
+	}
+
+	if err := db.DeleteTrainingBudgetEntry(idInt); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Entry deleted successfully"})
+}
+
+// GetTrainingHours handles GET requests for total training hours
+func GetTrainingHours(c *gin.Context) {
+	year := c.Query("year")
+	if year == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Year parameter is required"})
+		return
+	}
+
+	yearInt, err := strconv.Atoi(year)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid year parameter"})
+		return
+	}
+
+	entries, err := db.GetTrainingEntriesForYear(yearInt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var totalHours int
+	for _, entry := range entries {
+		totalHours += entry.Training_hours
+	}
+
+	c.JSON(http.StatusOK, gin.H{"total_hours": totalHours})
 }

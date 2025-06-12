@@ -129,3 +129,43 @@ func DeleteTrainingBudgetEntry(id int) error {
 	_, err := db.Exec(query, id)
 	return err
 }
+
+// GetTrainingBudgetEntry retrieves a single training budget entry by ID
+func GetTrainingBudgetEntry(id int) (TrainingBudgetEntry, error) {
+	query := `SELECT id, date, training_name, hours, cost_without_vat
+              FROM training_budget WHERE id = ?`
+
+	var entry TrainingBudgetEntry
+	err := db.QueryRow(query, id).Scan(
+		&entry.Id,
+		&entry.Date,
+		&entry.Training_name,
+		&entry.Hours,
+		&entry.Cost_without_vat,
+	)
+	if err != nil {
+		return TrainingBudgetEntry{}, err
+	}
+
+	return entry, nil
+}
+
+// GetTrainingBudgetEntryByDate retrieves a single training budget entry by date
+func GetTrainingBudgetEntryByDate(date string) (TrainingBudgetEntry, error) {
+	query := `SELECT id, date, training_name, hours, cost_without_vat
+              FROM training_budget WHERE date = ?`
+
+	var entry TrainingBudgetEntry
+	err := db.QueryRow(query, date).Scan(
+		&entry.Id,
+		&entry.Date,
+		&entry.Training_name,
+		&entry.Hours,
+		&entry.Cost_without_vat,
+	)
+	if err != nil {
+		return TrainingBudgetEntry{}, err
+	}
+
+	return entry, nil
+}

@@ -1,0 +1,38 @@
+name: API Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test-api:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24.1'
+
+    - name: Make scripts executable
+      run: |
+        chmod +x scripts/build.sh
+        chmod +x scripts/test_training_budget_api.sh
+
+    - name: Build
+      run: ./scripts/build.sh
+
+    - name: Start API Server
+      run: |
+        ./bin/timesheet --no-tui --port 8080 &
+        sleep 5  # Wait for server to start
+
+    - name: Run API Tests
+      run: ./scripts/test_training_budget_api.sh
+
+    - name: Stop API Server
+      if: always()
+      run: pkill timesheet || true 
