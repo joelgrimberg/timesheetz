@@ -1,0 +1,73 @@
+openapi: 3.0.0
+info:
+  title: Timesheetz Training Hours API
+  description: API for retrieving available training hours
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: http://localhost:4001
+    description: Alternative local development server
+
+paths:
+  /api/training-hours:
+    get:
+      summary: Get total training hours for a year
+      description: Retrieves the total number of training hours for a specific year
+      operationId: getTrainingHours
+      parameters:
+        - name: year
+          in: query
+          description: The year to get training hours for
+          required: true
+          schema:
+            type: integer
+            format: int32
+            example: 2024
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_hours:
+                    type: integer
+                    description: Total training hours for the specified year
+                    example: 40
+        '400':
+          description: Bad request - Invalid year parameter
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Year parameter is required"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error fetching entries"
+
+examples:
+  request:
+    curl: |
+      curl -X GET "http://localhost:8080/api/training-hours?year=2024"
+  response:
+    success: |
+      {
+        "total_hours": 40
+      }
+    error: |
+      {
+        "error": "Year parameter is required"
+      } 
