@@ -86,14 +86,14 @@ func GetDBPath() string {
 		return dbPath
 	}
 
-	// In production mode, use ~/.config/timesheet/
+	// In production mode, use ~/.local/share/timesheetz/
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Failed to get user home directory: %v", err)
 	}
 
 	// Create timesheet directory if it doesn't exist
-	timesheetDir := filepath.Join(homeDir, ".config", "timesheet")
+	timesheetDir := filepath.Join(homeDir, ".local", "share", "timesheetz")
 	if err := os.MkdirAll(timesheetDir, 0755); err != nil {
 		log.Fatalf("Failed to create timesheet directory: %v", err)
 	}

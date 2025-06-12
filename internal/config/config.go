@@ -11,8 +11,6 @@ import (
 	"timesheet/internal/logging"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/huh/spinner"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Runtime development mode flag
@@ -97,31 +95,20 @@ func GetAPIPort() int {
 }
 
 func GetStartAPIServer() bool {
-	configFile, err := os.ReadFile("config.json")
+	configPath := GetConfigPath()
+	configFile, err := os.ReadFile(configPath)
 	if err != nil {
 		fmt.Println("Error reading config file:", err)
 		return false
 	}
 
-	var configData struct {
-		Name             string `json:"name"`
-		CompanyName      string `json:"companyName"`
-		FreeSpeech       string `json:"FreeSpeech"`
-		SendDocumentType string `json:"sendDocumentType"`
-		StartApiServer   bool   `json:"startApiServer"`
-		SendToOthers     bool   `json:"sendToOthers"`
-		RecipientEmail   string `json:"recipientEmail"`
-		SenderEmail      string `json:"senderEmail"`
-		ReplyToEmail     string `json:"replyToEmail"`
-		ResendApiKey     string `json:"resendApiKey"`
-	}
-
-	if err := json.Unmarshal(configFile, &configData); err != nil {
+	var config Config
+	if err := json.Unmarshal(configFile, &config); err != nil {
 		fmt.Println("Error parsing config JSON:", err)
 		return false
 	}
 
-	return configData.StartApiServer
+	return config.StartAPIServer
 }
 
 func checkConfig() bool {
@@ -137,7 +124,8 @@ func checkConfig() bool {
 
 // GetEmailConfig reads the configuration file and returns email-related settings
 func GetEmailConfig() (name string, companysendToOthers bool, recipientEmail, senderEmail, replyToEmail, resendAPIKey string, err error) {
-	configFile, err := os.ReadFile("config.json")
+	configPath := GetConfigPath()
+	configFile, err := os.ReadFile(configPath)
 	if err != nil {
 		return "", false, "", "", "", "", fmt.Errorf("error reading config file: %w", err)
 	}
@@ -152,7 +140,8 @@ func GetEmailConfig() (name string, companysendToOthers bool, recipientEmail, se
 }
 
 func GetDocumentType() string {
-	configFile, err := os.ReadFile("config.json")
+	configPath := GetConfigPath()
+	configFile, err := os.ReadFile(configPath)
 	if err != nil {
 		log.Printf("error reading config file: %v", err)
 		return ""
@@ -168,7 +157,8 @@ func GetDocumentType() string {
 }
 
 func GetUserConfig() (name string, companyName string, freeSpeech string, err error) {
-	configFile, err := os.ReadFile("config.json")
+	configPath := GetConfigPath()
+	configFile, err := os.ReadFile(configPath)
 	if err != nil {
 		return "", "", "", fmt.Errorf("error reading config file: %w", err)
 	}
@@ -209,8 +199,8 @@ func RequireConfig() {
 
 			// Training Hours Configuration
 			TrainingHours: TrainingHours{
-				YearlyTarget: 0,
-				Category:     "",
+				YearlyTarget: 36, // Default to 36 hours
+				Category:     "Training",
 			},
 		}
 
@@ -219,6 +209,7 @@ func RequireConfig() {
 
 		// Create a string variable for port input
 		portStr := "8080"
+		trainingHoursStr := "36"
 
 		form := huh.NewForm(
 			huh.NewGroup(huh.NewNote().
@@ -247,6 +238,15 @@ func RequireConfig() {
 					Title("What else do you want to share (will be put below the company name)").
 					Placeholder("Uni Corn").
 					Description("Free Speech"),
+			),
+
+			// Training Hours Configuration
+			huh.NewGroup(
+				huh.NewInput().
+					Value(&trainingHoursStr).
+					Title("How many training hours are allocated per year?").
+					Placeholder("36").
+					Description("This is the total number of training hours you can use per year."),
 			),
 
 			// API Server Configuration
@@ -352,89 +352,76 @@ func RequireConfig() {
 			).WithHideFunc(func() bool {
 				return !config.SendToOthers
 			}),
+
+			// Save the configuration
+			huh.NewGroup(
+				huh.NewNote().
+					Title("Saving Configuration").
+					Description("Saving your configuration..."),
+			),
 		).WithAccessible(accessible)
 
 		err := form.Run()
 		if err != nil {
-			fmt.Println("Uh oh:", err)
+			fmt.Println("Error running form:", err)
 			os.Exit(1)
 		}
 
-		// Convert port string to int
+		// Convert port string to integer
 		port, err := strconv.Atoi(portStr)
 		if err != nil {
-			fmt.Println("Invalid port number:", err)
+			fmt.Println("Error: Invalid port number")
 			os.Exit(1)
 		}
 		config.APIPort = port
 
-		// Prepare and write config
-		prepareConfig := func() {
-			SaveConfig(config)
+		// Convert training hours string to integer
+		trainingHours, err := strconv.Atoi(trainingHoursStr)
+		if err != nil {
+			fmt.Println("Error: Invalid training hours number")
+			os.Exit(1)
 		}
+		config.TrainingHours.YearlyTarget = trainingHours
 
-		_ = spinner.New().Title("Writing your configuration...").Accessible(accessible).Action(prepareConfig).Run()
-
-		// Print config summary
-		{
-			style := lipgloss.NewStyle().
-				Width(50).
-				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("63")).
-				Padding(1, 2)
-
-			titleStyle := lipgloss.NewStyle().Bold(true)
-			highlight := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-
-			summary := fmt.Sprintf("%s\n\n", titleStyle.Render("CORNIFIGURATION COMPLETE"))
-
-			// User Information
-			summary += fmt.Sprintf("Name: %s\n", highlight.Render(config.Name))
-			summary += fmt.Sprintf("Company: %s\n", highlight.Render(config.CompanyName))
-			summary += fmt.Sprintf("Free Speech: %s\n", highlight.Render(config.FreeSpeech))
-
-			// API Server Configuration
-			summary += fmt.Sprintf("Start API Server: %s\n", highlight.Render(strconv.FormatBool(config.StartAPIServer)))
-			summary += fmt.Sprintf("API Port: %s\n", highlight.Render(strconv.Itoa(config.APIPort)))
-
-			// Development Settings
-			summary += fmt.Sprintf("Development Mode: %s\n", highlight.Render(strconv.FormatBool(config.DevelopmentMode)))
-
-			// Document Settings
-			summary += fmt.Sprintf("Document Type: %s\n", highlight.Render(config.SendDocumentType))
-
-			// Email Configuration
-			summary += fmt.Sprintf("Send to Others: %s\n", highlight.Render(strconv.FormatBool(config.SendToOthers)))
-
-			if config.SendToOthers {
-				summary += fmt.Sprintf("Recipient Email: %s\n", highlight.Render(config.RecipientEmail))
-				summary += fmt.Sprintf("Sender Email: %s\n", highlight.Render(config.SenderEmail))
-				summary += fmt.Sprintf("Reply-To Email: %s\n", highlight.Render(config.ReplyToEmail))
-				summary += fmt.Sprintf("Resend API Key: %s\n", highlight.Render("****"+config.ResendAPIKey[len(config.ResendAPIKey)-4:]))
-			}
-
-			summary += "\nUnicornfiguration has been saved to config.json"
-			fmt.Println(style.Render(summary))
-		}
-
-		logging.Log("Created new config file at %s", configPath)
+		// Save the configuration
+		SaveConfig(config)
 	} else {
 		logging.Log("Config file is found!")
 	}
 }
 
+// GetConfigPath returns the path to the config file
 func GetConfigPath() string {
-	return filepath.Join(".", "config.json")
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		// Fallback to home directory if UserConfigDir fails
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("Failed to get user home directory: %v", err)
+		}
+		configDir = filepath.Join(homeDir, ".config")
+	}
+	return filepath.Join(configDir, "timesheetz", "config.json")
 }
 
+// SaveConfig saves the configuration to the config file
 func SaveConfig(config Config) {
+	configPath := GetConfigPath()
+
+	// Ensure the directory exists
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		fmt.Println("Error creating config directory:", err)
+		os.Exit(1)
+	}
+
 	configData, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		fmt.Println("Error marshalling config:", err)
 		os.Exit(1)
 	}
 
-	err = os.WriteFile("config.json", configData, 0644)
+	err = os.WriteFile(configPath, configData, 0644)
 	if err != nil {
 		fmt.Println("Error writing config file:", err)
 		os.Exit(1)
@@ -446,11 +433,13 @@ func SaveConfig(config Config) {
 func GetDevelopmentMode() bool {
 	// Check runtime flag first
 	if runtimeDevMode {
+		logging.Log("Development mode enabled via runtime flag")
 		return true
 	}
 
 	// Fall back to config file
-	configFile, err := os.ReadFile("config.json")
+	configPath := GetConfigPath()
+	configFile, err := os.ReadFile(configPath)
 	if err != nil {
 		log.Printf("error reading config file: %v", err)
 		return false
@@ -460,12 +449,20 @@ func GetDevelopmentMode() bool {
 		log.Printf("error parsing config JSON: %v", err)
 		return false
 	}
-	return config.DevelopmentMode
+
+	if config.DevelopmentMode {
+		logging.Log("Development mode enabled via config file")
+		return true
+	}
+
+	logging.Log("Development mode disabled")
+	return false
 }
 
 // GetConfig reads and returns the configuration from the config file
 func GetConfig() (Config, error) {
-	configFile, err := os.ReadFile("config.json")
+	configPath := GetConfigPath()
+	configFile, err := os.ReadFile(configPath)
 	if err != nil {
 		return Config{}, err
 	}

@@ -41,7 +41,7 @@ func SetupLogging() *os.File {
 		homeDir = "."
 	}
 
-	logDir := filepath.Join(homeDir, ".config/timesheet/logs")
+	logDir := filepath.Join(homeDir, ".local", "state", "timesheetz", "logs")
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		log.Println("Warning: couldn't create logs directory:", err)
 		logDir = "."
