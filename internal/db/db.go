@@ -76,6 +76,15 @@ type TimesheetEntry struct {
 	Holiday_hours  int
 }
 
+// VacationEntry represents a row in the vacation table
+type VacationEntry struct {
+	Id        int
+	Date      string
+	Hours     int
+	Category  string
+	Notes     string
+}
+
 // GetDBPath returns the path to the database file
 func GetDBPath() string {
 	// Check if development mode is enabled
@@ -160,6 +169,14 @@ func InitializeDatabase(dbPath string) error {
 			cost_without_vat DECIMAL(10,2) NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_training_date ON training_budget(date);`,
+		`CREATE TABLE IF NOT EXISTS vacation (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			date TEXT NOT NULL,
+			hours INTEGER NOT NULL,
+			category TEXT NOT NULL,
+			notes TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);`,
 	}
 
 	for _, stmt := range stmts {
@@ -427,4 +444,79 @@ func GetLastClientName() (string, error) {
 		return "", fmt.Errorf("failed to get last client name: %w", err)
 	}
 	return clientName, nil
+}
+
+// AddVacationEntry adds a new vacation entry
+func AddVacationEntry(entry VacationEntry) error {
+	_, err := db.Exec(`
+		INSERT INTO vacation (date, hours, category, notes)
+		VALUES (?, ?, ?, ?)
+	`, entry.Date, entry.Hours, entry.Category, entry.Notes)
+	if err != nil {
+		return fmt.Errorf("failed to add vacation entry: %w", err)
+	}
+	return nil
+}
+
+// GetVacationEntriesForYear returns all vacation entries for a given year
+func GetVacationEntriesForYear(year int) ([]VacationEntry, error) {
+	rows, err := db.Query(`
+		SELECT id, date, hours, category, notes
+		FROM vacation
+		WHERE strftime('%Y', date) = ?
+		ORDER BY date DESC
+	`, fmt.Sprintf("%d", year))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query vacation entries: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []VacationEntry
+	for rows.Next() {
+		var entry VacationEntry
+		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Hours, &entry.Category, &entry.Notes); err != nil {
+			return nil, fmt.Errorf("failed to scan vacation entry: %w", err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
+}
+
+// GetVacationHoursForYear returns the total vacation hours used in a given year
+func GetVacationHoursForYear(year int) (int, error) {
+	var total int
+	err := db.QueryRow(`
+		SELECT COALESCE(SUM(hours), 0)
+		FROM vacation
+		WHERE strftime('%Y', date) = ?
+	`, fmt.Sprintf("%d", year)).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get vacation hours: %w", err)
+	}
+	return total, nil
+}
+
+// UpdateVacationEntry updates an existing vacation entry
+func UpdateVacationEntry(entry VacationEntry) error {
+	_, err := db.Exec(`
+		UPDATE vacation
+		SET date = ?, hours = ?, category = ?, notes = ?
+		WHERE id = ?
+	`, entry.Date, entry.Hours, entry.Category, entry.Notes, entry.Id)
+	if err != nil {
+		return fmt.Errorf("failed to update vacation entry: %w", err)
+	}
+	return nil
+}
+
+// DeleteVacationEntry deletes a vacation entry
+func DeleteVacationEntry(id int) error {
+	_, err := db.Exec(`
+		DELETE FROM vacation
+		WHERE id = ?
+	`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete vacation entry: %w", err)
+	}
+	return nil
 }

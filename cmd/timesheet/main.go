@@ -16,6 +16,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+var version = "dev" // will be set at build time
+
 // Command line flags
 type flags struct {
 	noTUI   bool
@@ -39,6 +41,7 @@ func setupFlags() flags {
 	verboseFlag := flag.Bool("verbose", false, "Show detailed output")
 	devFlag := flag.Bool("dev", false, "Run in development mode (uses local database)")
 	portFlag := flag.Int("port", 0, "Specify the port for the API server")
+	versionFlag := flag.Bool("version", false, "Show version and exit")
 
 	// Custom usage message
 	flag.Usage = func() {
@@ -58,6 +61,12 @@ func setupFlags() flags {
 
 	// Parse flags
 	flag.Parse()
+
+	// Check for version flag
+	if *versionFlag {
+		fmt.Println(version)
+		os.Exit(0)
+	}
 
 	return flags{
 		noTUI:   *noTUI,

@@ -14,6 +14,15 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}Starting Timesheetz service update...${NC}"
 
+# Output folder names for the viewer
+echo -e "\n${GREEN}Folder Locations:${NC}"
+echo "Script Directory: $SCRIPT_DIR"
+echo "Project Root: $PROJECT_ROOT"
+echo "Build Directory: $PROJECT_ROOT/build"
+echo "Local Binary Directory: $PROJECT_ROOT/bin"
+echo "Installed Binary: /usr/local/bin/timesheetz"
+echo "LaunchAgent Plist: ~/Library/LaunchAgents/com.timesheetz.plist"
+
 # Step 1: Build the new version
 echo -e "\n${GREEN}Building new version...${NC}"
 "$PROJECT_ROOT/scripts/build.sh"
@@ -21,7 +30,7 @@ echo -e "\n${GREEN}Building new version...${NC}"
 # Step 2: Stop the current service
 echo -e "\n${GREEN}Stopping current service...${NC}"
 if launchctl list | grep -q "com.timesheetz"; then
-    launchctl unload ~/Library/LaunchAgents/com.timesheetz.plist
+    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.timesheetz.plist
     echo "Service stopped"
 else
     echo "Service was not running"
@@ -44,6 +53,20 @@ if launchctl list | grep -q "com.timesheetz"; then
 else
     echo -e "${RED}Service failed to start!${NC}"
     exit 1
+fi
+
+# Step 5.5: Check that the running version matches the built version
+echo -e "\n${GREEN}Checking binary version...${NC}"
+BUILT_VERSION=$("$PROJECT_ROOT/bin/timesheet" --version)
+INSTALLED_VERSION=$("/usr/local/bin/timesheetz" --version)
+
+if [ "$BUILT_VERSION" != "$INSTALLED_VERSION" ]; then
+    echo -e "${RED}Version mismatch!${NC}"
+    echo "Built version:     $BUILT_VERSION"
+    echo "Installed version: $INSTALLED_VERSION"
+    exit 1
+else
+    echo -e "${GREEN}Version matches!${NC}"
 fi
 
 # Step 6: Test the API health check

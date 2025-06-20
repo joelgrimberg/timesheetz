@@ -22,7 +22,7 @@ clean:
 
 # Build the application
 build:
-	go build -o timesheet ./cmd/timesheet
+	go build -ldflags "-X main.version=$(git describe --tags --always --dirty)" -o timesheet ./cmd/timesheet
 
 # Run tests
 test:

@@ -15,6 +15,7 @@ const (
 	TimesheetMode AppMode = iota
 	TrainingMode
 	TrainingBudgetMode
+	VacationMode
 	FormMode
 	TrainingBudgetFormMode
 )
@@ -27,6 +28,7 @@ type AppModel struct {
 	TimesheetModel          TimesheetModel
 	TrainingModel           TrainingModel
 	TrainingBudgetModel     TrainingBudgetModel
+	VacationModel           VacationModel
 	FormModel               FormModel
 	TrainingBudgetFormModel TrainingBudgetFormModel
 	ActiveMode              AppMode
@@ -39,6 +41,7 @@ func NewAppModel(addMode bool) AppModel {
 		TimesheetModel:          InitialTimesheetModel(),
 		TrainingModel:           InitialTrainingModel(),
 		TrainingBudgetModel:     InitialTrainingBudgetModel(),
+		VacationModel:           InitialVacationModel(),
 		FormModel:               InitialFormModel(),
 		TrainingBudgetFormModel: InitialTrainingBudgetFormModel(),
 		ActiveMode:              TimesheetMode,
@@ -68,13 +71,31 @@ func (m AppModel) Init() tea.Cmd {
 		return m.TrainingBudgetModel.Init()
 	case TrainingBudgetFormMode:
 		return m.TrainingBudgetFormModel.Init()
+	case VacationMode:
+		return m.VacationModel.Init()
 	}
 	return nil
 }
 
-func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+// ReturnToTimesheetMsg is sent when returning to the timesheet view
+type ReturnToTimesheetMsg struct{}
 
+// ReturnToTrainingBudgetMsg is sent when returning to the training budget view
+type ReturnToTrainingBudgetMsg struct{}
+
+func ReturnToTimesheet() tea.Cmd {
+	return func() tea.Msg {
+		return ReturnToTimesheetMsg{}
+	}
+}
+
+func ReturnToTrainingBudget() tea.Cmd {
+	return func() tea.Msg {
+		return ReturnToTrainingBudgetMsg{}
+	}
+}
+
+func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle global keys first
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		// Global quit handler
@@ -93,9 +114,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ActiveMode = TimesheetMode
 				case TrainingBudgetMode:
 					m.ActiveMode = TrainingMode
+				case VacationMode:
+					m.ActiveMode = TrainingBudgetMode
 				case TimesheetMode:
 					// Wrap around to the last tab
-					m.ActiveMode = TrainingBudgetMode
+					m.ActiveMode = VacationMode
 				}
 			case ">":
 				// Move to next tab
@@ -105,17 +128,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case TrainingMode:
 					m.ActiveMode = TrainingBudgetMode
 				case TrainingBudgetMode:
+					m.ActiveMode = VacationMode
+				case VacationMode:
 					// Wrap around to the first tab
 					m.ActiveMode = TimesheetMode
 				}
 			case "$":
 				// Switch to training budget view
 				m.ActiveMode = TrainingBudgetMode
+			case "v":
+				// Switch to vacation view
+				m.ActiveMode = VacationMode
 			case "r":
 				// Refresh all views
 				m.TimesheetModel = InitialTimesheetModel()
 				m.TrainingModel = InitialTrainingModel()
 				m.TrainingBudgetModel = InitialTrainingBudgetModel()
+				m.VacationModel = InitialVacationModel()
 				return m, nil
 			}
 		}
@@ -127,6 +156,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.TimesheetModel = InitialTimesheetModel()
 		m.TrainingModel = InitialTrainingModel()
 		m.TrainingBudgetModel = InitialTrainingBudgetModel()
+		m.VacationModel = InitialVacationModel()
 		return m, nil
 	}
 
@@ -166,14 +196,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Otherwise update timesheet view
 		timesheetModel, cmd := m.TimesheetModel.Update(msg)
 		m.TimesheetModel = timesheetModel.(TimesheetModel)
-
-		// If the timesheet model sent a refresh message, refresh all views
-		if _, ok := msg.(RefreshMsg); ok {
-			m.TimesheetModel = InitialTimesheetModel()
-			m.TrainingModel = InitialTrainingModel()
-			m.TrainingBudgetModel = InitialTrainingBudgetModel()
-		}
-
 		return m, cmd
 
 	case FormMode:
@@ -185,81 +207,52 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Otherwise return to timesheet mode
 			m.ActiveMode = TimesheetMode
-			// Refresh all views
-			m.TimesheetModel = InitialTimesheetModel()
-			m.TrainingModel = InitialTrainingModel()
-			m.TrainingBudgetModel = InitialTrainingBudgetModel()
 			return m, nil
 		}
 
-		// Otherwise update form view
+		// Update form model
 		formModel, cmd := m.FormModel.Update(msg)
 		m.FormModel = formModel.(FormModel)
 		return m, cmd
 
 	case TrainingMode:
-		// Update training view
+		// Update training model
 		trainingModel, cmd := m.TrainingModel.Update(msg)
 		m.TrainingModel = trainingModel.(TrainingModel)
-
-		// If the training model sent a refresh message, refresh all views
-		if _, ok := msg.(RefreshMsg); ok {
-			m.TimesheetModel = InitialTimesheetModel()
-			m.TrainingModel = InitialTrainingModel()
-			m.TrainingBudgetModel = InitialTrainingBudgetModel()
-		}
-
 		return m, cmd
 
 	case TrainingBudgetMode:
-		// Special handling for switching to training budget form mode
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			if keyMsg.String() == "a" {
-				m.ActiveMode = TrainingBudgetFormMode
-				// Initialize a fresh training budget form model
-				m.TrainingBudgetFormModel = InitialTrainingBudgetFormModel()
-				return m, m.TrainingBudgetFormModel.Init()
-			}
-		}
-
-		// Update training budget view
+		// Update training budget model
 		trainingBudgetModel, cmd := m.TrainingBudgetModel.Update(msg)
 		m.TrainingBudgetModel = trainingBudgetModel.(TrainingBudgetModel)
-
-		// If the training budget model sent a refresh message, refresh all views
-		if _, ok := msg.(RefreshMsg); ok {
-			m.TimesheetModel = InitialTimesheetModel()
-			m.TrainingModel = InitialTrainingModel()
-			m.TrainingBudgetModel = InitialTrainingBudgetModel()
-		}
-
 		return m, cmd
 
 	case TrainingBudgetFormMode:
 		// Check for special message to return to training budget mode
-		if _, ok := msg.(ReturnToTimesheetMsg); ok {
-			// Return to training budget mode
+		if _, ok := msg.(ReturnToTrainingBudgetMsg); ok {
 			m.ActiveMode = TrainingBudgetMode
-			// Refresh all views
-			m.TimesheetModel = InitialTimesheetModel()
-			m.TrainingModel = InitialTrainingModel()
-			m.TrainingBudgetModel = InitialTrainingBudgetModel()
 			return m, nil
 		}
 
-		// Update training budget form view
-		formModel, cmd := m.TrainingBudgetFormModel.Update(msg)
-		m.TrainingBudgetFormModel = formModel.(TrainingBudgetFormModel)
+		// Update training budget form model
+		trainingBudgetFormModel, cmd := m.TrainingBudgetFormModel.Update(msg)
+		m.TrainingBudgetFormModel = trainingBudgetFormModel.(TrainingBudgetFormModel)
+		return m, cmd
+
+	case VacationMode:
+		// Update vacation model
+		vacationModel, cmd := m.VacationModel.Update(msg)
+		m.VacationModel = vacationModel.(VacationModel)
 		return m, cmd
 	}
 
-	return m, cmd
+	return m, nil
 }
 
 func (m AppModel) View() string {
 	// Render tabs
 	var renderedTabs []string
-	for i, t := range []string{"Timesheet", "Training", "Training Budget"} {
+	for i, t := range []string{"Timesheet", "Training", "Training Budget", "Vacation"} {
 		var style lipgloss.Style
 		if i == int(m.ActiveMode) {
 			style = activeTabStyle
@@ -281,6 +274,8 @@ func (m AppModel) View() string {
 		content = m.TrainingModel.View()
 	case TrainingBudgetMode:
 		content = m.TrainingBudgetModel.View()
+	case VacationMode:
+		content = m.VacationModel.View()
 	case FormMode:
 		content = m.FormModel.View()
 	case TrainingBudgetFormMode:
@@ -294,15 +289,6 @@ func (m AppModel) View() string {
 // GetRefreshChan returns the refresh channel
 func (m AppModel) GetRefreshChan() chan RefreshMsg {
 	return m.refreshChan
-}
-
-// Message to return to timesheet mode
-type ReturnToTimesheetMsg struct{}
-
-func ReturnToTimesheet() tea.Cmd {
-	return func() tea.Msg {
-		return ReturnToTimesheetMsg{}
-	}
 }
 
 // Tab styles

@@ -150,11 +150,15 @@ func InitialTrainingModel() TrainingModel {
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240"))
+		BorderForeground(lipgloss.Color("240")).
+		BorderBottom(true).
+		Bold(false)
 	s.Selected = s.Selected.
 		Foreground(lipgloss.Color("229")).
 		Background(lipgloss.Color("57")).
 		Bold(false)
+	s.Cell = s.Cell.
+		Foreground(lipgloss.Color("252"))
 	t.SetStyles(s)
 
 	// Get training entries for the current year
@@ -286,8 +290,8 @@ func (m TrainingModel) View() string {
 	}
 
 	return fmt.Sprintf(
-		"\n%s\n\n%s\n\n%s%s",
-		titleStyle.Render(fmt.Sprintf("Year: %d", m.currentYear)),
+		"%s\n%s\n%s%s",
+		titleStyle.Render(fmt.Sprintf("Training %d", m.currentYear)),
 		lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("240")).

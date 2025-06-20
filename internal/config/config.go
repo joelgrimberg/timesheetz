@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 	"timesheet/internal/logging"
 
 	"github.com/charmbracelet/huh"
@@ -19,6 +18,12 @@ var runtimePort int
 
 // TrainingHours represents the training hours configuration
 type TrainingHours struct {
+	YearlyTarget int    `json:"yearlyTarget"`
+	Category     string `json:"category"`
+}
+
+// VacationHours represents the vacation hours configuration
+type VacationHours struct {
 	YearlyTarget int    `json:"yearlyTarget"`
 	Category     string `json:"category"`
 }
@@ -49,6 +54,9 @@ type Config struct {
 
 	// Training Hours Configuration
 	TrainingHours TrainingHours `json:"trainingHours"`
+
+	// Vacation Hours Configuration
+	VacationHours VacationHours `json:"vacationHours"`
 }
 
 // SetRuntimeDevMode sets the runtime development mode
@@ -202,6 +210,12 @@ func RequireConfig() {
 				YearlyTarget: 36, // Default to 36 hours
 				Category:     "Training",
 			},
+
+			// Vacation Hours Configuration
+			VacationHours: VacationHours{
+				YearlyTarget: 0, // Default to 0 hours
+				Category:     "Vacation",
+			},
 		}
 
 		// Should we run in accessible mode?
@@ -210,6 +224,7 @@ func RequireConfig() {
 		// Create a string variable for port input
 		portStr := "8080"
 		trainingHoursStr := "36"
+		vacationHoursStr := "0"
 
 		form := huh.NewForm(
 			huh.NewGroup(huh.NewNote().
@@ -247,6 +262,15 @@ func RequireConfig() {
 					Title("How many training hours are allocated per year?").
 					Placeholder("36").
 					Description("This is the total number of training hours you can use per year."),
+			),
+
+			// Vacation Hours Configuration
+			huh.NewGroup(
+				huh.NewInput().
+					Value(&vacationHoursStr).
+					Title("How many vacation hours are allocated per year?").
+					Placeholder("0").
+					Description("This is the total number of vacation hours you can use per year."),
 			),
 
 			// API Server Configuration
@@ -383,6 +407,14 @@ func RequireConfig() {
 		}
 		config.TrainingHours.YearlyTarget = trainingHours
 
+		// Convert vacation hours string to integer
+		vacationHours, err := strconv.Atoi(vacationHoursStr)
+		if err != nil {
+			fmt.Println("Error: Invalid vacation hours number")
+			os.Exit(1)
+		}
+		config.VacationHours.YearlyTarget = vacationHours
+
 		// Save the configuration
 		SaveConfig(config)
 	} else {
@@ -404,29 +436,19 @@ func GetConfigPath() string {
 	return filepath.Join(configDir, "timesheetz", "config.json")
 }
 
-// SaveConfig saves the configuration to the config file
-func SaveConfig(config Config) {
+// SaveConfig saves the configuration to a file
+func SaveConfig(config Config) error {
 	configPath := GetConfigPath()
-
-	// Ensure the directory exists
-	configDir := filepath.Dir(configPath)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		fmt.Println("Error creating config directory:", err)
-		os.Exit(1)
-	}
-
-	configData, err := json.MarshalIndent(config, "", "  ")
+	configJSON, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		fmt.Println("Error marshalling config:", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	err = os.WriteFile(configPath, configData, 0644)
-	if err != nil {
-		fmt.Println("Error writing config file:", err)
-		os.Exit(1)
+	if err := os.WriteFile(configPath, configJSON, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
 	}
-	time.Sleep(1 * time.Second)
+
+	return nil
 }
 
 // GetDevelopmentMode returns whether development mode is enabled

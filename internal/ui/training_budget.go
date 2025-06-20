@@ -191,7 +191,9 @@ func InitialTrainingBudgetModel() TrainingBudgetModel {
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240"))
+		BorderForeground(lipgloss.Color("240")).
+		BorderBottom(true).
+		Bold(false)
 	s.Selected = s.Selected.
 		Foreground(lipgloss.Color("229")).
 		Background(lipgloss.Color("57")).
@@ -449,50 +451,27 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m TrainingBudgetModel) View() string {
+	var s string
+
+	// Show the year as title
+	yearTitle := fmt.Sprintf("Training Budget %d", m.currentYear)
+	s += titleStyle.Render(yearTitle) + "\n"
+
 	// Get the table view
-	table := m.table.View()
+	tableView := m.table.View()
 
-	// Get training entries for the current year to calculate used hours
-	entries, err := db.GetTrainingEntriesForYear(m.currentYear)
-	if err != nil {
-		return fmt.Sprintf("Error: %v", err)
-	}
+	// Render the table with baseStyle
+	s += baseStyle.Render(tableView) + "\n"
 
-	// Calculate used hours
-	var usedHours int
-	for _, entry := range entries {
-		usedHours += entry.Training_hours
-	}
-
-	// Get budget entries to calculate allocated hours
-	budgetEntries, err := db.GetTrainingBudgetEntriesForYear(m.currentYear)
-	if err != nil {
-		return fmt.Sprintf("Error: %v", err)
-	}
-
-	// Calculate allocated hours
-	var allocatedHours int
-	for _, entry := range budgetEntries {
-		allocatedHours += entry.Hours
-	}
-
-	// Create the header with year and hours info
-	header := lipgloss.JoinHorizontal(
-		lipgloss.Left,
-		lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("Training Budget %d", m.currentYear)),
-		lipgloss.NewStyle().PaddingLeft(2).Render(fmt.Sprintf("Allocated: %d hours", allocatedHours)),
-		lipgloss.NewStyle().PaddingLeft(2).Render(fmt.Sprintf("Used: %d hours", usedHours)),
-		lipgloss.NewStyle().PaddingLeft(2).Render(fmt.Sprintf("Remaining: %d hours", allocatedHours-usedHours)),
-	)
-
-	// Create the help view
-	helpView := ""
 	if m.showHelp {
-		helpView = "\n" + m.help.View(m.keys)
+		// Full help view
+		s += m.help.FullHelpView(m.keys.FullHelp())
+	} else {
+		// Short help view
+		s += helpStyle.Render(m.help.ShortHelpView(m.keys.ShortHelp()))
 	}
 
-	// Combine everything
-	return fmt.Sprintf("%s\n%s%s", header, table, helpView)
+	return s
 }
 
 func (k TrainingBudgetKeyMap) Help() []key.Binding {

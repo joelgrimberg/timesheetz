@@ -149,6 +149,23 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 		// Export routes
 		api.GET("/export/pdf", ExportPDF)
 		api.GET("/export/excel", ExportExcel)
+
+		// Vacation routes
+		api.GET("/vacation", func(c *gin.Context) {
+			GetVacation(c)
+		})
+		api.POST("/vacation", func(c *gin.Context) {
+			CreateVacation(c)
+			sendRefresh()
+		})
+		api.PUT("/vacation/:id", func(c *gin.Context) {
+			UpdateVacation(c)
+			sendRefresh()
+		})
+		api.DELETE("/vacation/:id", func(c *gin.Context) {
+			DeleteVacation(c)
+			sendRefresh()
+		})
 	}
 
 	// Start the server
