@@ -39,6 +39,9 @@ type Config struct {
 	StartAPIServer bool `json:"startAPIServer"`
 	APIPort        int  `json:"apiPort"`
 
+	// Database Location
+	DBLocation string `json:"dbLocation"`
+
 	// Development Settings
 	DevelopmentMode bool `json:"developmentMode"`
 
@@ -192,6 +195,9 @@ func RequireConfig() {
 			StartAPIServer: true,
 			APIPort:        8080,
 
+			// Database Location
+			DBLocation: "",
+
 			// Development Settings
 			DevelopmentMode: false,
 
@@ -225,6 +231,7 @@ func RequireConfig() {
 		portStr := "8080"
 		trainingHoursStr := "36"
 		vacationHoursStr := "0"
+		dbLocationStr := ""
 
 		form := huh.NewForm(
 			huh.NewGroup(huh.NewNote().
@@ -253,6 +260,15 @@ func RequireConfig() {
 					Title("What else do you want to share (will be put below the company name)").
 					Placeholder("Uni Corn").
 					Description("Free Speech"),
+			),
+
+			// Database Configuration
+			huh.NewGroup(
+				huh.NewInput().
+					Value(&dbLocationStr).
+					Title("Where should your database be stored?").
+					Placeholder("/path/to/timesheet.db").
+					Description("Leave empty to use the default location (~/.config/timesheetz/timesheet.db). You can specify a full path to store it elsewhere."),
 			),
 
 			// Training Hours Configuration
@@ -415,6 +431,9 @@ func RequireConfig() {
 		}
 		config.VacationHours.YearlyTarget = vacationHours
 
+		// Set database location (empty string means use default)
+		config.DBLocation = dbLocationStr
+
 		// Save the configuration
 		SaveConfig(config)
 	} else {
@@ -484,15 +503,62 @@ func GetDevelopmentMode() bool {
 // GetConfig reads and returns the configuration from the config file
 func GetConfig() (Config, error) {
 	configPath := GetConfigPath()
+
+	// Create debug info
+	debugInfo := map[string]interface{}{
+		"configPath": configPath,
+	}
+
 	configFile, err := os.ReadFile(configPath)
 	if err != nil {
+		debugInfo["error"] = fmt.Sprintf("Error reading config file: %v", err)
+		writeDebugToFile(debugInfo)
 		return Config{}, err
 	}
+
+	debugInfo["configContent"] = string(configFile)
 
 	var config Config
 	if err := json.Unmarshal(configFile, &config); err != nil {
+		debugInfo["error"] = fmt.Sprintf("Error parsing config JSON: %v", err)
+		writeDebugToFile(debugInfo)
 		return Config{}, err
 	}
 
+	debugInfo["parsedVacationHours"] = config.VacationHours
+	writeDebugToFile(debugInfo)
+
 	return config, nil
+}
+
+// writeDebugToFile writes debug information to a JSON file
+func writeDebugToFile(debugInfo map[string]interface{}) {
+	debugJSON, err := json.MarshalIndent(debugInfo, "", "  ")
+	if err != nil {
+		return
+	}
+
+	// Write to debug file in the same directory as config
+	configDir := filepath.Dir(GetConfigPath())
+	debugPath := filepath.Join(configDir, "config_debug.json")
+	os.WriteFile(debugPath, debugJSON, 0644)
+}
+
+// GetDBPath returns the path to the database file, using config if set
+func GetDBPath() string {
+	config, err := GetConfig()
+	if err == nil && config.DBLocation != "" {
+		return config.DBLocation
+	}
+	// Default location
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		// Fallback to home directory if UserConfigDir fails
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("Failed to get user home directory: %v", err)
+		}
+		configDir = filepath.Join(homeDir, ".config")
+	}
+	return filepath.Join(configDir, "timesheetz", "timesheet.db")
 }

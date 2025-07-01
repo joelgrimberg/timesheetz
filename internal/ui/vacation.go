@@ -1,154 +1,308 @@
 package ui
 
 import (
-    "fmt"
-    "time"
-    "timesheet/internal/api"
+	"fmt"
+	"time"
+	"timesheet/internal/config"
+	"timesheet/internal/db"
 
-    tea "github.com/charmbracelet/bubbletea"
-    "github.com/charmbracelet/lipgloss"
-    "github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/table"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
-// VacationModel represents the vacation view
+// VacationKeyMap defines the keybindings for the vacation view
+type VacationKeyMap struct {
+	Up      key.Binding
+	Down    key.Binding
+	Left    key.Binding
+	Right   key.Binding
+	HelpKey key.Binding
+	Quit    key.Binding
+	PrevTab key.Binding
+	NextTab key.Binding
+}
+
+// DefaultVacationKeyMap returns the default keybindings
+func DefaultVacationKeyMap() VacationKeyMap {
+	return VacationKeyMap{
+		Up: key.NewBinding(
+			key.WithKeys("up", "k"),
+			key.WithHelp("↑/k", "up"),
+		),
+		Down: key.NewBinding(
+			key.WithKeys("down", "j"),
+			key.WithHelp("↓/j", "down"),
+		),
+		Left: key.NewBinding(
+			key.WithKeys("left", "h"),
+			key.WithHelp("←/h", "prev year"),
+		),
+		Right: key.NewBinding(
+			key.WithKeys("right", "l"),
+			key.WithHelp("→/l", "next year"),
+		),
+		HelpKey: key.NewBinding(
+			key.WithKeys("?"),
+			key.WithHelp("?", "toggle help"),
+		),
+		Quit: key.NewBinding(
+			key.WithKeys("q", "ctrl+c"),
+			key.WithHelp("q", "quit"),
+		),
+		PrevTab: key.NewBinding(
+			key.WithKeys("<"),
+			key.WithHelp("<", "prev tab"),
+		),
+		NextTab: key.NewBinding(
+			key.WithKeys(">"),
+			key.WithHelp(">", "next tab"),
+		),
+	}
+}
+
+// ShortHelp returns keybindings to be shown in the mini help view
+func (k VacationKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{
+		k.Up,
+		k.Down,
+		k.Left,
+		k.Right,
+		k.HelpKey,
+		k.Quit,
+	}
+}
+
+// FullHelp returns keybindings for the expanded help view
+func (k VacationKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{
+			k.Up,
+			k.Down,
+			k.Left,
+			k.Right,
+			k.HelpKey,
+			k.Quit,
+		},
+		{
+			k.PrevTab,
+			k.NextTab,
+		},
+	}
+}
+
+// VacationModel represents the vacation hours view
 type VacationModel struct {
-    entries     []api.VacationEntry
-    yearlyTarget int
-    totalHours  int
-    remaining   int
-    year        int
-    ready       bool
+	table        table.Model
+	yearlyTarget int
+	currentYear  int
+	keys         VacationKeyMap
+	help         help.Model
+	showHelp     bool
+}
+
+// ChangeVacationYearMsg is used to change the year
+type ChangeVacationYearMsg struct {
+	Year int
+}
+
+// Command to change the year
+func ChangeVacationYear(year int) tea.Cmd {
+	return func() tea.Msg {
+		return ChangeVacationYearMsg{Year: year}
+	}
 }
 
 // InitialVacationModel creates a new vacation model
 func InitialVacationModel() VacationModel {
-    return VacationModel{
-        year:  time.Now().Year(),
-        ready: true,
-    }
+	// Get current year
+	currentYear := time.Now().Year()
+
+	// Get yearly target from config
+	configFile, err := config.GetConfig()
+	if err != nil {
+		// Default to 25 if config is not available
+		return VacationModel{
+			yearlyTarget: 25,
+			currentYear:  currentYear,
+			keys:         DefaultVacationKeyMap(),
+			help:         help.New(),
+			showHelp:     false,
+		}
+	}
+
+	// Create columns for the table
+	columns := []table.Column{
+		{Title: "Date", Width: 12},
+		{Title: "Hours", Width: 8},
+	}
+
+	// Create the table
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithFocused(true),
+		table.WithHeight(15),
+	)
+
+	// Set styles
+	s := table.DefaultStyles()
+	s.Header = s.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		BorderBottom(true).
+		Bold(false)
+	s.Selected = s.Selected.
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("57")).
+		Bold(false)
+	s.Cell = s.Cell.
+		Foreground(lipgloss.Color("252"))
+	t.SetStyles(s)
+
+	// Get vacation entries for the current year
+	entries, err := db.GetVacationEntriesForYear(currentYear)
+	if err != nil {
+		return VacationModel{
+			table:        t,
+			yearlyTarget: configFile.VacationHours.YearlyTarget,
+			currentYear:  currentYear,
+			keys:         DefaultVacationKeyMap(),
+			help:         help.New(),
+			showHelp:     false,
+		}
+	}
+
+	// Convert entries to table rows
+	var rows []table.Row
+	var totalHours int
+	for _, entry := range entries {
+		rows = append(rows, table.Row{
+			entry.Date,
+			fmt.Sprintf("%d", entry.Vacation_hours),
+		})
+		totalHours += entry.Vacation_hours
+	}
+
+	// Add total row
+	rows = append(rows, table.Row{
+		"Total",
+		fmt.Sprintf("%d/%d", totalHours, configFile.VacationHours.YearlyTarget),
+	})
+
+	t.SetRows(rows)
+
+	// Select the first row by default (if there are any entries)
+	if len(entries) > 0 {
+		t.SetCursor(0)
+	} else {
+		// If no entries, select the total row
+		t.SetCursor(len(rows) - 1)
+	}
+
+	return VacationModel{
+		table:        t,
+		yearlyTarget: configFile.VacationHours.YearlyTarget,
+		currentYear:  currentYear,
+		keys:         DefaultVacationKeyMap(),
+		help:         help.New(),
+		showHelp:     false,
+	}
 }
 
-// Init initializes the model
 func (m VacationModel) Init() tea.Cmd {
-    return m.fetchVacationData
+	return nil
 }
 
-// Update handles messages and updates the model
 func (m VacationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-    switch msg := msg.(type) {
-    case tea.KeyMsg:
-        switch msg.String() {
-        case "r":
-            return m, m.fetchVacationData
-        case "left", "h":
-            // Decrease year
-            m.year--
-            return m, m.fetchVacationData
-        case "right", "l":
-            // Increase year
-            m.year++
-            return m, m.fetchVacationData
-        }
-    case vacationDataMsg:
-        m.entries = msg.entries
-        m.yearlyTarget = msg.yearlyTarget
-        m.totalHours = msg.totalHours
-        m.remaining = msg.remaining
-        m.ready = true
-    }
-    return m, nil
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case ChangeVacationYearMsg:
+		// Update the current year in the model
+		m.currentYear = msg.Year
+
+		// Reload config to get the latest yearly target
+		configFile, err := config.GetConfig()
+		if err == nil {
+			m.yearlyTarget = configFile.VacationHours.YearlyTarget
+		}
+
+		// Get vacation entries for the new year
+		entries, err := db.GetVacationEntriesForYear(msg.Year)
+		if err != nil {
+			return m, tea.Printf("Error: %v", err)
+		}
+
+		// Convert entries to table rows
+		var rows []table.Row
+		var totalHours int
+		for _, entry := range entries {
+			rows = append(rows, table.Row{
+				entry.Date,
+				fmt.Sprintf("%d", entry.Vacation_hours),
+			})
+			totalHours += entry.Vacation_hours
+		}
+
+		// Add total row
+		rows = append(rows, table.Row{
+			"Total",
+			fmt.Sprintf("%d/%d", totalHours, m.yearlyTarget),
+		})
+
+		m.table.SetRows(rows)
+
+		// Select the first row by default (if there are any entries)
+		if len(entries) > 0 {
+			m.table.SetCursor(0)
+		} else {
+			// If no entries, select the total row
+			m.table.SetCursor(len(rows) - 1)
+		}
+
+		return m, nil
+
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.HelpKey):
+			m.showHelp = !m.showHelp
+		case key.Matches(msg, m.keys.Quit):
+			return m, tea.Quit
+		case key.Matches(msg, m.keys.Left):
+			// Move to previous year
+			return m, ChangeVacationYear(m.currentYear - 1)
+		case key.Matches(msg, m.keys.Right):
+			// Move to next year
+			return m, ChangeVacationYear(m.currentYear + 1)
+		}
+	}
+
+	m.table, cmd = m.table.Update(msg)
+	return m, cmd
 }
 
-// View renders the model
 func (m VacationModel) View() string {
-    if !m.ready {
-        return "Loading vacation data..."
-    }
+	var helpView string
+	if m.showHelp {
+		helpView = "\n" + lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render("Navigation:\n  ↑/↓, k/j: Move up/down\n  ←/→, h/l: Change year\n  ?: Toggle help\n  q: Quit\n\nTabs:\n  <: Previous tab\n  >: Next tab")
+	} else {
+		helpView = "\n" + lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render("↑/↓: Navigate • ←/→: Change year • ?: Help • q: Quit • </>: Tabs")
+	}
 
-    var s string
-
-    // Show the year as title
-    yearTitle := fmt.Sprintf("Vacation %d", m.year)
-    s += titleStyle.Render(yearTitle) + "\n"
-
-    // Create columns for the table
-    columns := []table.Column{
-        {Title: "Date", Width: 12},
-        {Title: "Hours", Width: 8},
-    }
-
-    // Create the table
-    t := table.New(
-        table.WithColumns(columns),
-        table.WithFocused(true),
-        table.WithHeight(15),
-    )
-
-    // Set styles
-    tableStyles := table.DefaultStyles()
-    tableStyles.Header = tableStyles.Header.
-        BorderStyle(lipgloss.NormalBorder()).
-        BorderForeground(lipgloss.Color("240")).
-        BorderBottom(true).
-        Bold(false)
-    tableStyles.Selected = tableStyles.Selected.
-        Foreground(lipgloss.Color("229")).
-        Background(lipgloss.Color("57")).
-        Bold(false)
-    t.SetStyles(tableStyles)
-
-    // Convert entries to table rows
-    var rows []table.Row
-    for _, entry := range m.entries {
-        rows = append(rows, table.Row{
-            entry.Date,
-            fmt.Sprintf("%d", entry.Hours),
-        })
-    }
-
-    // Add total row
-    rows = append(rows, table.Row{
-        "Total",
-        fmt.Sprintf("%d/%d", m.totalHours, m.yearlyTarget),
-    })
-
-    t.SetRows(rows)
-
-    // Get the table view
-    tableView := t.View()
-
-    // Render the table with baseStyle
-    s += baseStyle.Render(tableView) + "\n"
-
-    // Add help text
-    s += helpStyle.Render("Controls: r: Refresh  ←/→: Change Year  q: Quit\n")
-
-    return s
+	return fmt.Sprintf(
+		"%s\n%s\n%s%s",
+		titleStyle.Render(fmt.Sprintf("Vacation %d", m.currentYear)),
+		lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Render(m.table.View()),
+		helpStyle.Render("↑/↓: Navigate • <: Prev tab • >: Next tab • q: Quit"),
+		helpView,
+	)
 }
-
-// vacationDataMsg is sent when vacation data is fetched
-type vacationDataMsg struct {
-    entries     []api.VacationEntry
-    yearlyTarget int
-    totalHours  int
-    remaining   int
-}
-
-// errorMsg is sent when an error occurs
-type errorMsg struct {
-    err error
-}
-
-// fetchVacationData fetches vacation data from the API
-func (m VacationModel) fetchVacationData() tea.Msg {
-    data, err := api.GetVacation(m.year)
-    if err != nil {
-        return errorMsg{err}
-    }
-    return vacationDataMsg{
-        entries:     data.Entries,
-        yearlyTarget: data.YearlyTarget,
-        totalHours:  data.TotalHours,
-        remaining:   data.Remaining,
-    }
-} 

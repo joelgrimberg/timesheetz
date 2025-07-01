@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,22 +15,6 @@ type TrainingBudgetEntry struct {
 	Training_name    string  `json:"training_name"`
 	Hours            int     `json:"hours"`
 	Cost_without_vat float64 `json:"cost_without_vat"`
-}
-
-// VacationEntry represents a vacation entry
-type VacationEntry struct {
-	Date     string `json:"date"`
-	Hours    int    `json:"hours"`
-	Category string `json:"category"`
-	Notes    string `json:"notes"`
-}
-
-// VacationResponse represents the response from the vacation API
-type VacationResponse struct {
-	Entries     []VacationEntry `json:"entries"`
-	YearlyTarget int            `json:"yearlyTarget"`
-	TotalHours  int            `json:"totalHours"`
-	Remaining   int            `json:"remaining"`
 }
 
 // GetTrainingBudgetEntries handles GET request for training budget entries
@@ -145,46 +128,6 @@ func GetTrainingHours(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
-}
-
-// GetVacation returns all vacation entries for a given year
-func GetVacation(year int) (VacationResponse, error) {
-	resp, err := http.Get(fmt.Sprintf("http://localhost:8080/api/vacation?year=%d", year))
-	if err != nil {
-		return VacationResponse{}, fmt.Errorf("failed to get vacation data: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return VacationResponse{}, fmt.Errorf("failed to get vacation data: status %d", resp.StatusCode)
-	}
-
-	var data VacationResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return VacationResponse{}, fmt.Errorf("failed to decode vacation data: %w", err)
-	}
-
-	return data, nil
-}
-
-// CreateVacation creates a new vacation entry
-func CreateVacation(entry VacationEntry) error {
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return fmt.Errorf("failed to marshal vacation entry: %w", err)
-	}
-
-	resp, err := http.Post("http://localhost:8080/api/vacation", "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		return fmt.Errorf("failed to create vacation entry: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to create vacation entry: status %d", resp.StatusCode)
-	}
-
-	return nil
 }
 
 func main() {

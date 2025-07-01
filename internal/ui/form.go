@@ -31,11 +31,11 @@ type errMsg error
 
 // FormModel for timesheet entry
 type FormModel struct {
-	inputs         []textinput.Model
-	focused        int
-	error          string
-	success        string
-	isEditing      bool
+	inputs          []textinput.Model
+	focused         int
+	error           string
+	success         string
+	isEditing       bool
 	quitAfterSubmit bool
 }
 
@@ -76,9 +76,9 @@ func InitialFormModelWithDate(date string) FormModel {
 	}
 
 	return FormModel{
-		inputs:         inputs,
-		focused:        0,
-		isEditing:      false,
+		inputs:          inputs,
+		focused:         0,
+		isEditing:       false,
 		quitAfterSubmit: false,
 	}
 }

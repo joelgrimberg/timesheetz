@@ -76,15 +76,6 @@ type TimesheetEntry struct {
 	Holiday_hours  int
 }
 
-// VacationEntry represents a row in the vacation table
-type VacationEntry struct {
-	Id        int
-	Date      string
-	Hours     int
-	Category  string
-	Notes     string
-}
-
 // GetDBPath returns the path to the database file
 func GetDBPath() string {
 	// Check if development mode is enabled
@@ -169,14 +160,6 @@ func InitializeDatabase(dbPath string) error {
 			cost_without_vat DECIMAL(10,2) NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_training_date ON training_budget(date);`,
-		`CREATE TABLE IF NOT EXISTS vacation (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			date TEXT NOT NULL,
-			hours INTEGER NOT NULL,
-			category TEXT NOT NULL,
-			notes TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);`,
 	}
 
 	for _, stmt := range stmts {
@@ -261,6 +244,10 @@ func GetTimesheetEntryByDate(date string) (TimesheetEntry, error) {
 }
 
 func AddTimesheetEntry(entry TimesheetEntry) error {
+	// Remove debug output
+	// fmt.Printf("DEBUG: AddTimesheetEntry - Date: %s, Client: %s, VacationHours: %d\n",
+	// 	entry.Date, entry.Client_name, entry.Vacation_hours)
+
 	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := db.Exec(query,
@@ -273,9 +260,11 @@ func AddTimesheetEntry(entry TimesheetEntry) error {
 		entry.Sick_hours,
 		entry.Holiday_hours)
 	if err != nil {
+		// fmt.Printf("DEBUG: AddTimesheetEntry error: %v\n", err)
 		return err
 	}
 
+	// fmt.Printf("DEBUG: AddTimesheetEntry success\n")
 	return nil
 }
 
@@ -446,77 +435,40 @@ func GetLastClientName() (string, error) {
 	return clientName, nil
 }
 
-// AddVacationEntry adds a new vacation entry
-func AddVacationEntry(entry VacationEntry) error {
-	_, err := db.Exec(`
-		INSERT INTO vacation (date, hours, category, notes)
-		VALUES (?, ?, ?, ?)
-	`, entry.Date, entry.Hours, entry.Category, entry.Notes)
-	if err != nil {
-		return fmt.Errorf("failed to add vacation entry: %w", err)
-	}
-	return nil
-}
-
-// GetVacationEntriesForYear returns all vacation entries for a given year
-func GetVacationEntriesForYear(year int) ([]VacationEntry, error) {
+// GetVacationEntriesForYear returns all vacation days with vacation_hours > 0 from the timesheet table
+func GetVacationEntriesForYear(year int) ([]TimesheetEntry, error) {
 	rows, err := db.Query(`
-		SELECT id, date, hours, category, notes
-		FROM vacation
-		WHERE strftime('%Y', date) = ?
+		SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, (client_hours + vacation_hours + idle_hours + training_hours + sick_hours + holiday_hours) AS total_hours
+		FROM timesheet
+		WHERE strftime('%Y', date) = ? AND vacation_hours > 0
 		ORDER BY date DESC
 	`, fmt.Sprintf("%d", year))
 	if err != nil {
-		return nil, fmt.Errorf("failed to query vacation entries: %w", err)
+		return nil, fmt.Errorf("failed to query timesheet vacation entries: %w", err)
 	}
 	defer rows.Close()
 
-	var entries []VacationEntry
+	var entries []TimesheetEntry
 	for rows.Next() {
-		var entry VacationEntry
-		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Hours, &entry.Category, &entry.Notes); err != nil {
-			return nil, fmt.Errorf("failed to scan vacation entry: %w", err)
+		var entry TimesheetEntry
+		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours, &entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours); err != nil {
+			return nil, fmt.Errorf("failed to scan timesheet vacation entry: %w", err)
 		}
 		entries = append(entries, entry)
 	}
 	return entries, nil
 }
 
-// GetVacationHoursForYear returns the total vacation hours used in a given year
+// GetVacationHoursForYear returns the total vacation hours used in a given year (from timesheet table only)
 func GetVacationHoursForYear(year int) (int, error) {
 	var total int
 	err := db.QueryRow(`
-		SELECT COALESCE(SUM(hours), 0)
-		FROM vacation
-		WHERE strftime('%Y', date) = ?
+		SELECT COALESCE(SUM(vacation_hours), 0)
+		FROM timesheet
+		WHERE strftime('%Y', date) = ? AND vacation_hours > 0
 	`, fmt.Sprintf("%d", year)).Scan(&total)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get vacation hours: %w", err)
+		return 0, fmt.Errorf("failed to get vacation hours from timesheet table: %w", err)
 	}
 	return total, nil
-}
-
-// UpdateVacationEntry updates an existing vacation entry
-func UpdateVacationEntry(entry VacationEntry) error {
-	_, err := db.Exec(`
-		UPDATE vacation
-		SET date = ?, hours = ?, category = ?, notes = ?
-		WHERE id = ?
-	`, entry.Date, entry.Hours, entry.Category, entry.Notes, entry.Id)
-	if err != nil {
-		return fmt.Errorf("failed to update vacation entry: %w", err)
-	}
-	return nil
-}
-
-// DeleteVacationEntry deletes a vacation entry
-func DeleteVacationEntry(id int) error {
-	_, err := db.Exec(`
-		DELETE FROM vacation
-		WHERE id = ?
-	`, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete vacation entry: %w", err)
-	}
-	return nil
 }

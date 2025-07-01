@@ -1,10 +1,11 @@
 package ui
 
 import (
+	"timesheet/internal/ui/views"
+
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"timesheet/internal/ui/views"
 )
 
 // InitializeUI sets up the main UI components
@@ -12,11 +13,10 @@ func InitializeUI() *tea.Program {
 	// Create views
 	timesheetView := views.NewTimesheetView()
 	trainingView := views.NewTrainingView()
-	vacationView := views.NewVacationView()
 	settingsView := views.NewSettingsView()
 
 	// Create the main model
-	model := NewModel(timesheetView, trainingView, vacationView, settingsView)
+	model := NewModel(timesheetView, trainingView, settingsView)
 
 	// Create and return the program
 	return tea.NewProgram(model, tea.WithAltScreen())
@@ -33,8 +33,8 @@ type Model struct {
 // NewModel creates a new UI model
 func NewModel(views ...tea.Model) Model {
 	return Model{
-		views:  views,
-		ready:  true,
+		views: views,
+		ready: true,
 	}
 }
 
@@ -73,7 +73,7 @@ func (m Model) View() string {
 	content := m.views[m.currentView].View()
 
 	// Create the tab bar
-	tabs := []string{"Timesheet", "Training", "Vacation", "Settings"}
+	tabs := []string{"Timesheet", "Training", "Settings"}
 	tabBar := ""
 	for i, tab := range tabs {
 		if i == m.currentView {
@@ -92,4 +92,4 @@ func (m Model) View() string {
 		tabBar,
 		content,
 	)
-} 
+}
