@@ -60,6 +60,7 @@ type TimesheetKeyMap struct {
 	JumpDown    key.Binding
 	ClearEntry  key.Binding
 	YankEntry   key.Binding
+	MoveEntry   key.Binding
 	PasteEntry  key.Binding
 	Print       key.Binding
 	SendAsEmail key.Binding
@@ -116,6 +117,9 @@ func DefaultTimesheetKeyMap() TimesheetKeyMap {
 		YankEntry: key.NewBinding(
 			key.WithKeys("y"),
 			key.WithHelp("y", "yank entry")),
+		MoveEntry: key.NewBinding(
+			key.WithKeys("m"),
+			key.WithHelp("m", "move entry")),
 		PasteEntry: key.NewBinding(
 			key.WithKeys("p"),
 			key.WithHelp("p", "paste entry")),
@@ -137,6 +141,7 @@ func (k TimesheetKeyMap) ShortHelp() []key.Binding {
 		k.AddEntry,
 		k.ClearEntry,
 		k.YankEntry,
+		k.MoveEntry,
 		k.PasteEntry,
 		k.Help,
 		k.Quit,
@@ -158,10 +163,10 @@ func (k TimesheetKeyMap) ShortHelp() []key.Binding {
 // FullHelp returns keybindings for the expanded help view.
 func (k TimesheetKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Left, k.Right, k.JumpUp, k.JumpDown},               // first column
-		{k.PrevMonth, k.NextMonth},                                          // second column - month navigation
-		{k.GotoToday, k.Enter, k.AddEntry, k.ClearEntry},                    // third column
-		{k.YankEntry, k.PasteEntry, k.Print, k.SendAsEmail, k.Help, k.Quit}, // fourth column
+		{k.Up, k.Down, k.Left, k.Right, k.JumpUp, k.JumpDown},                            // first column
+		{k.PrevMonth, k.NextMonth},                                                       // second column - month navigation
+		{k.GotoToday, k.Enter, k.AddEntry, k.ClearEntry},                                 // third column
+		{k.YankEntry, k.MoveEntry, k.PasteEntry, k.Print, k.SendAsEmail, k.Help, k.Quit}, // fourth column
 		{
 			key.NewBinding(
 				key.WithKeys("<"),
@@ -430,6 +435,43 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			return m, tea.Printf("Entry yanked: %s", row[2])
+
+		case key.Matches(msg, m.keys.MoveEntry):
+			// Get the selected row data
+			row := m.table.SelectedRow()
+
+			// Check if there's any data to move
+			if !hasYankableData(row) {
+				return m, tea.Printf("No entry to move")
+			}
+
+			// Store the data in the yankedEntry (same as yank)
+			clientHours := parseIntWithDefault(row[3])
+			trainingHours := parseIntWithDefault(row[4])
+			vacationHours := parseIntWithDefault(row[5])
+			idleHours := parseIntWithDefault(row[6])
+			holidayHours := parseIntWithDefault(row[7])
+			sickHours := parseIntWithDefault(row[8])
+
+			m.yankedEntry = &YankedEntry{
+				Date:          row[0],
+				ClientName:    row[2],
+				ClientHours:   clientHours,
+				TrainingHours: trainingHours,
+				VacationHours: vacationHours,
+				IdleHours:     idleHours,
+				HolidayHours:  holidayHours,
+				SickHours:     sickHours,
+			}
+
+			// Delete the original entry from the database
+			selectedDate := row[0]
+			err := db.DeleteTimesheetEntryByDate(selectedDate)
+			if err != nil {
+				return m, tea.Printf("Error moving entry: %v", err)
+			}
+
+			return m, tea.Printf("Entry moved: %s", row[2])
 
 		case key.Matches(msg, m.keys.PasteEntry):
 			// Check if we have any yanked data
