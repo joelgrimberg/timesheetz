@@ -519,9 +519,6 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Printf("Error saving entry: %v", err)
 			}
 
-			// Clear the yanked entry after successful paste
-			m.yankedEntry = nil
-
 			// Refresh the table but maintain cursor position
 			return m, RefreshPreservingCursor(m.currentYear, m.currentMonth, cursorRow)
 
@@ -550,15 +547,14 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.ClearEntry):
 			// Get the date from the selected row
 			selectedDate := m.table.SelectedRow()[0]
+			cursorRow := m.table.Cursor()
 			// Delete the entry
 			err := db.DeleteTimesheetEntryByDate(selectedDate)
 			if err != nil {
 				return m, tea.Printf("Error clearing entry: %v", err)
 			}
-			// Send a refresh message to update all views
-			return m, func() tea.Msg {
-				return RefreshMsg{}
-			}
+			// Refresh the table but maintain cursor position
+			return m, RefreshPreservingCursor(m.currentYear, m.currentMonth, cursorRow)
 
 		case key.Matches(msg, m.keys.PrevMonth):
 			// Calculate the previous month
@@ -778,9 +774,9 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 		BorderBottom(true).
 		Bold(false)
 	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("229")).
-		Background(lipgloss.Color("57")).
-		Bold(false)
+		Foreground(lipgloss.Color("#FF5FB0")).
+		Background(lipgloss.Color("#41D1AC")).
+		Bold(true)
 	t.SetStyles(s)
 
 	return t, columnTotals, nil
