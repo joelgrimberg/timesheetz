@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"time"
 	"timesheet/internal/db"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -78,14 +79,20 @@ func (m AppModel) Init() tea.Cmd {
 }
 
 // ReturnToTimesheetMsg is sent when returning to the timesheet view
-type ReturnToTimesheetMsg struct{}
+type ReturnToTimesheetMsg struct {
+	Date string // Optional: the date to select when returning
+}
 
 // ReturnToTrainingBudgetMsg is sent when returning to the training budget view
 type ReturnToTrainingBudgetMsg struct{}
 
-func ReturnToTimesheet() tea.Cmd {
+func ReturnToTimesheet(date ...string) tea.Cmd {
 	return func() tea.Msg {
-		return ReturnToTimesheetMsg{}
+		d := ""
+		if len(date) > 0 {
+			d = date[0]
+		}
+		return ReturnToTimesheetMsg{Date: d}
 	}
 }
 
@@ -109,6 +116,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch keyMsg.String() {
 			case "<":
 				// Move to previous tab
+				prevMode := m.ActiveMode
 				switch m.ActiveMode {
 				case TrainingMode:
 					m.ActiveMode = TimesheetMode
@@ -120,8 +128,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Wrap around to the last tab
 					m.ActiveMode = VacationMode
 				}
+				// Refresh timesheet model if switching to it
+				if m.ActiveMode == TimesheetMode && prevMode != TimesheetMode {
+					m.TimesheetModel = InitialTimesheetModel()
+				}
 			case ">":
 				// Move to next tab
+				prevMode := m.ActiveMode
 				switch m.ActiveMode {
 				case TimesheetMode:
 					m.ActiveMode = TrainingMode
@@ -132,6 +145,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case VacationMode:
 					// Wrap around to the first tab
 					m.ActiveMode = TimesheetMode
+				}
+				// Refresh timesheet model if switching to it
+				if m.ActiveMode == TimesheetMode && prevMode != TimesheetMode {
+					m.TimesheetModel = InitialTimesheetModel()
 				}
 			case "$":
 				// Switch to training budget view
@@ -167,8 +184,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			if keyMsg.String() == "a" {
 				m.ActiveMode = FormMode
-				// Initialize a fresh form model
-				m.FormModel = InitialFormModel()
+				// Use the selected row's date for the form
+				selectedDate := m.TimesheetModel.GetSelectedDate()
+				m.FormModel = InitialFormModelWithDate(selectedDate)
 				return m, m.FormModel.Init()
 			}
 		}
@@ -200,12 +218,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case FormMode:
 		// Check for special message to return to timesheet mode
-		if _, ok := msg.(ReturnToTimesheetMsg); ok {
+		if rttMsg, ok := msg.(ReturnToTimesheetMsg); ok {
 			// If quitAfterSubmit is true, quit the app
 			if m.FormModel.quitAfterSubmit {
 				return m, tea.Quit
 			}
-			// Otherwise return to timesheet mode
+			// Otherwise return to timesheet mode, on the correct month
+			if rttMsg.Date != "" {
+				// Parse year and month from date
+				t, err := time.Parse("2006-01-02", rttMsg.Date)
+				if err == nil {
+					m.TimesheetModel = InitialTimesheetModelForMonth(t.Year(), t.Month(), rttMsg.Date)
+				} else {
+					m.TimesheetModel = InitialTimesheetModel()
+				}
+			} else {
+				m.TimesheetModel = InitialTimesheetModel()
+			}
 			m.ActiveMode = TimesheetMode
 			return m, nil
 		}
@@ -222,6 +251,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case TrainingBudgetMode:
+		// Handle add entry message
+		if _, ok := msg.(AddTrainingBudgetMsg); ok {
+			m.ActiveMode = TrainingBudgetFormMode
+			m.TrainingBudgetFormModel = InitialTrainingBudgetFormModel()
+			return m, m.TrainingBudgetFormModel.Init()
+		}
+
 		// Update training budget model
 		trainingBudgetModel, cmd := m.TrainingBudgetModel.Update(msg)
 		m.TrainingBudgetModel = trainingBudgetModel.(TrainingBudgetModel)

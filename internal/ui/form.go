@@ -286,7 +286,7 @@ func (m FormModel) handleSubmit() tea.Cmd {
 	}
 
 	// Otherwise return to timesheet view
-	return ReturnToTimesheet()
+	return ReturnToTimesheet(entry.Date)
 }
 
 // Helper functions

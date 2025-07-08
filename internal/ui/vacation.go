@@ -143,7 +143,7 @@ func InitialVacationModel() VacationModel {
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithFocused(true),
-		table.WithHeight(15),
+		table.WithHeight(25),
 	)
 
 	// Set styles
@@ -194,11 +194,12 @@ func InitialVacationModel() VacationModel {
 	t.SetRows(rows)
 
 	// Select the first row by default (if there are any entries)
+	// Never select the total row
 	if len(entries) > 0 {
 		t.SetCursor(0)
 	} else {
-		// If no entries, select the total row
-		t.SetCursor(len(rows) - 1)
+		// If no entries, don't select anything (cursor will be at -1)
+		t.SetCursor(-1)
 	}
 
 	return VacationModel{
@@ -213,6 +214,16 @@ func InitialVacationModel() VacationModel {
 
 func (m VacationModel) Init() tea.Cmd {
 	return nil
+}
+
+// getLastSelectableRowIndex returns the index of the last row that can be selected
+// (excludes the total row)
+func (m VacationModel) getLastSelectableRowIndex() int {
+	rows := m.table.Rows()
+	if len(rows) <= 1 {
+		return -1 // No selectable rows
+	}
+	return len(rows) - 2 // Last row before the total row
 }
 
 func (m VacationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -255,11 +266,12 @@ func (m VacationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.table.SetRows(rows)
 
 		// Select the first row by default (if there are any entries)
+		// Never select the total row
 		if len(entries) > 0 {
 			m.table.SetCursor(0)
 		} else {
-			// If no entries, select the total row
-			m.table.SetCursor(len(rows) - 1)
+			// If no entries, don't select anything (cursor will be at -1)
+			m.table.SetCursor(-1)
 		}
 
 		return m, nil
@@ -276,10 +288,41 @@ func (m VacationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Right):
 			// Move to next year
 			return m, ChangeVacationYear(m.currentYear + 1)
+		case key.Matches(msg, m.keys.Down):
+			// Handle down navigation to prevent landing on total row
+			currentCursor := m.table.Cursor()
+			lastSelectable := m.getLastSelectableRowIndex()
+
+			if currentCursor < lastSelectable {
+				// Normal navigation - let the table handle it
+				m.table, cmd = m.table.Update(msg)
+			} else if currentCursor == lastSelectable {
+				// We're at the last selectable row, don't move down
+				return m, nil
+			} else {
+				// We're somehow on the total row, move to last selectable
+				m.table.SetCursor(lastSelectable)
+			}
+			return m, cmd
+		case key.Matches(msg, m.keys.Up):
+			// Handle up navigation normally, but ensure we don't end up on total row
+			m.table, cmd = m.table.Update(msg)
+			// Check if we landed on the total row and move up if needed
+			if m.table.Cursor() == m.getLastSelectableRowIndex()+1 {
+				m.table.SetCursor(m.getLastSelectableRowIndex())
+			}
+			return m, cmd
 		}
 	}
 
+	// Handle other table updates
 	m.table, cmd = m.table.Update(msg)
+
+	// Ensure cursor never lands on the total row
+	if m.table.Cursor() == m.getLastSelectableRowIndex()+1 {
+		m.table.SetCursor(m.getLastSelectableRowIndex())
+	}
+
 	return m, cmd
 }
 

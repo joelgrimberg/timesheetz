@@ -258,6 +258,40 @@ func InitialTimesheetModel() TimesheetModel {
 	}
 }
 
+// Create a timesheet model for a specific year/month and select a date
+func InitialTimesheetModelForMonth(year int, month time.Month, selectDate string) TimesheetModel {
+	// Generate initial table and column totals
+	t, totals, err := generateMonthTable(year, month)
+	if err != nil {
+		log.Fatalf("Error generating table: %v", err)
+	}
+
+	model := TimesheetModel{
+		table:        t,
+		keys:         DefaultTimesheetKeyMap(),
+		help:         help.New(),
+		showHelp:     false,
+		currentYear:  year,
+		currentMonth: month,
+		cursorRow:    0,
+		columnTotals: totals,
+		yankedEntry:  nil,
+	}
+
+	// Try to select the given date
+	if selectDate != "" {
+		for i, row := range model.table.Rows() {
+			if row[0] == selectDate {
+				model.table.SetCursor(i)
+				model.cursorRow = i
+				break
+			}
+		}
+	}
+
+	return model
+}
+
 func (m TimesheetModel) Init() tea.Cmd {
 	return nil
 }
@@ -566,15 +600,6 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, ChangeMonth(prevYear, prevMonth, "")
 
 		case key.Matches(msg, m.keys.NextMonth):
-			// Don't allow navigating past the current month
-			now := time.Now()
-
-			// If we're already at the current month or beyond, don't go further
-			if (m.currentYear > now.Year()) ||
-				(m.currentYear == now.Year() && m.currentMonth >= now.Month()) {
-				return m, nil
-			}
-
 			// Calculate the next month
 			nextYear, nextMonth := m.currentYear, m.currentMonth+1
 			if nextMonth > time.December {
@@ -582,13 +607,7 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				nextYear++
 			}
 
-			// Only proceed if we're not going past the current month
-			if (nextYear < now.Year()) ||
-				(nextYear == now.Year() && nextMonth <= now.Month()) {
-				return m, ChangeMonth(nextYear, nextMonth, "")
-			}
-
-			return m, nil
+			return m, ChangeMonth(nextYear, nextMonth, "")
 		}
 
 		// Handle table navigation
@@ -780,4 +799,13 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 	t.SetStyles(s)
 
 	return t, columnTotals, nil
+}
+
+// GetSelectedDate returns the date of the currently selected row in the table
+func (m TimesheetModel) GetSelectedDate() string {
+	row := m.table.SelectedRow()
+	if len(row) > 0 {
+		return row[0]
+	}
+	return time.Now().Format("2006-01-02")
 }
