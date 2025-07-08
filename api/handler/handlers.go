@@ -223,3 +223,43 @@ func GetTrainingHours(c *gin.Context) {
 		"available_hours": availableHours,
 	})
 }
+
+// GetVacationHours handles GET requests for total vacation hours
+func GetVacationHours(c *gin.Context) {
+	year := c.Query("year")
+	if year == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Year parameter is required"})
+		return
+	}
+
+	yearInt, err := strconv.Atoi(year)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid year parameter"})
+		return
+	}
+
+	// Get spent hours from timesheet entries
+	usedHours, err := db.GetVacationHoursForYear(yearInt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get total hours from config
+	config, err := config.GetConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read configuration"})
+		return
+	}
+
+	totalHours := config.VacationHours.YearlyTarget
+	availableHours := totalHours - usedHours
+
+	// Return all hours information
+	c.JSON(http.StatusOK, gin.H{
+		"year":            yearInt,
+		"total_hours":     totalHours,
+		"used_hours":      usedHours,
+		"available_hours": availableHours,
+	})
+}

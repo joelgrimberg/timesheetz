@@ -143,6 +143,11 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 			GetTrainingHours(c)
 		})
 
+		// Vacation Hours route
+		api.GET("/vacation-hours", func(c *gin.Context) {
+			GetVacationHours(c)
+		})
+
 		// Get last client name
 		api.GET("/last-client", GetLastClientName)
 

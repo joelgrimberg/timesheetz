@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"timesheet/internal/config"
 	"timesheet/internal/db"
 )
 
@@ -130,6 +131,52 @@ func GetTrainingHours(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// GetVacationHours handles GET request for total vacation hours
+func GetVacationHours(w http.ResponseWriter, r *http.Request) {
+	year := r.URL.Query().Get("year")
+	if year == "" {
+		http.Error(w, "Year parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	yearInt, err := strconv.Atoi(year)
+	if err != nil {
+		http.Error(w, "Invalid year parameter", http.StatusBadRequest)
+		return
+	}
+
+	usedHours, err := db.GetVacationHoursForYear(yearInt)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error fetching vacation hours: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get total hours from config
+	config, err := config.GetConfig()
+	if err != nil {
+		http.Error(w, "Failed to read configuration", http.StatusInternalServerError)
+		return
+	}
+
+	totalHours := config.VacationHours.YearlyTarget
+	availableHours := totalHours - usedHours
+
+	response := struct {
+		Year           int `json:"year"`
+		TotalHours     int `json:"total_hours"`
+		UsedHours      int `json:"used_hours"`
+		AvailableHours int `json:"available_hours"`
+	}{
+		Year:           yearInt,
+		TotalHours:     totalHours,
+		UsedHours:      usedHours,
+		AvailableHours: availableHours,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 func main() {
 	// ... existing routes ...
 
@@ -151,6 +198,9 @@ func main() {
 
 	// Training Hours route
 	http.HandleFunc("/api/training-hours", GetTrainingHours)
+
+	// Vacation Hours route
+	http.HandleFunc("/api/vacation-hours", GetVacationHours)
 
 	// ... rest of main function ...
 }

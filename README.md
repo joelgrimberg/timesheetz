@@ -314,6 +314,35 @@ curl -X POST "http://localhost:8080/api/training-budget" \
 curl -X GET "http://localhost:8080/api/training-hours?year=2024"
 ```
 
+### Vacation Hours API
+
+The vacation hours API provides endpoints for retrieving vacation hours information.
+
+#### Endpoints
+
+1. **Get Vacation Hours Information**
+   ```http
+   GET /api/vacation-hours?year=2024
+   ```
+   Returns vacation hours information including total, used, and available hours for the specified year.
+
+#### Example Usage
+
+```bash
+# Get vacation hours information for 2024
+curl -X GET "http://localhost:8080/api/vacation-hours?year=2024"
+```
+
+**Response:**
+```json
+{
+  "year": 2024,
+  "total_hours": 180,
+  "used_hours": 45,
+  "available_hours": 135
+}
+```
+
 ## TODO
 
 - [ ] update Readme and setup github pages
