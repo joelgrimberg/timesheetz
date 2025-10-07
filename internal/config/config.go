@@ -82,7 +82,8 @@ func GetAPIPort() int {
 	}
 
 	// Fall back to config file
-	configFile, err := os.ReadFile("config.json")
+	configPath := GetConfigPath()
+	configFile, err := os.ReadFile(configPath)
 	if err != nil {
 		fmt.Println("Error: No port specified. Please either:")
 		fmt.Println("  1. Add 'apiPort' to your config.json file")

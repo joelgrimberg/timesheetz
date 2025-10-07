@@ -111,13 +111,12 @@ func (m FormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Return to timesheet view
 			return m, ReturnToTimesheet()
 
-		case tea.KeyTab, tea.KeyShiftTab, tea.KeyEnter, tea.KeyUp, tea.KeyDown:
-			// Handle navigation between fields
-			if msg.Type == tea.KeyEnter && m.focused == len(m.inputs)-1 {
-				// Submit the form if Enter pressed on last field
-				return m, m.handleSubmit()
-			}
+		case tea.KeyEnter:
+			// Submit the form when Enter is pressed on any field
+			return m, m.handleSubmit()
 
+		case tea.KeyTab, tea.KeyShiftTab, tea.KeyUp, tea.KeyDown:
+			// Handle navigation between fields
 			// Change focus
 			if msg.Type == tea.KeyUp || msg.Type == tea.KeyShiftTab {
 				m.focused--

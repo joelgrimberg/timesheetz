@@ -36,22 +36,42 @@ func IsAPIRunning(port int) bool {
 // StartServer starts the API server
 func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 	// Get the configured port
-	port := config.GetAPIPort()
-	addr := fmt.Sprintf("0.0.0.0:%d", port)
+	initialPort := config.GetAPIPort()
+	port := initialPort
+	maxAttempts := 10 // Limit to prevent infinite loops
 
-	// Check if port is available
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		fmt.Printf("\nError: Port %d is already in use. This might be because:\n", port)
-		fmt.Printf("1. Another instance of Timesheetz is already running\n")
-		fmt.Printf("2. Another application is using this port\n\n")
-		fmt.Printf("To fix this, you can:\n")
-		fmt.Printf("1. Stop the other instance\n")
-		fmt.Printf("2. Run Timesheetz with a different port: --port <number>\n")
-		fmt.Printf("   Example: ./bin/timesheet --port 8081\n\n")
-		log.Fatalf("Port %d is not available: %v", port, err)
+	// Try to find an available port
+	var listener net.Listener
+	var err error
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		addr := fmt.Sprintf("0.0.0.0:%d", port)
+
+		// Check if port is available
+		listener, err = net.Listen("tcp", addr)
+		if err == nil {
+			// Port is available, break out of the loop
+			break
+		}
+
+		// Port is in use, try the next one
+		port++
 	}
+
+	if err != nil {
+		fmt.Printf("\nError: Could not find an available port after %d attempts.\n", maxAttempts)
+		fmt.Printf("Tried ports %d to %d.\n", initialPort, initialPort+maxAttempts-1)
+		fmt.Printf("Please manually specify a port with --port flag.\n\n")
+		log.Fatalf("No available ports found")
+	}
+
+	// Close the test listener
 	listener.Close()
+
+	// If we had to change ports, inform the user
+	if port != initialPort {
+		fmt.Printf("\nPort %d is already in use. Using port %d instead.\n", initialPort, port)
+	}
 
 	// Set Gin to Release Mode
 	gin.SetMode(gin.ReleaseMode)
@@ -69,7 +89,7 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 		SkipPaths: []string{"/health"}, // Skip logging for health checks
 	})
 
-	router := gin.New() // Use New() instead of Default() to avoid default middleware
+	router := gin.New()
 	router.Use(ginLogger)
 	router.Use(gin.Recovery())
 
@@ -158,7 +178,7 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 
 	// Start the server
 	fmt.Printf("\nTimesheet API started on http://localhost:%d\n\n", port)
-	if err := router.Run(addr); err != nil {
+	if err := router.Run(fmt.Sprintf("0.0.0.0:%d", port)); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

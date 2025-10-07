@@ -128,9 +128,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Wrap around to the last tab
 					m.ActiveMode = VacationMode
 				}
-				// Refresh timesheet model if switching to it
+				// Refresh models when switching to them
 				if m.ActiveMode == TimesheetMode && prevMode != TimesheetMode {
 					m.TimesheetModel = InitialTimesheetModel()
+				} else if m.ActiveMode == TrainingMode && prevMode != TrainingMode {
+					m.TrainingModel = InitialTrainingModel()
 				}
 			case ">":
 				// Move to next tab
@@ -146,9 +148,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Wrap around to the first tab
 					m.ActiveMode = TimesheetMode
 				}
-				// Refresh timesheet model if switching to it
+				// Refresh models when switching to them
 				if m.ActiveMode == TimesheetMode && prevMode != TimesheetMode {
 					m.TimesheetModel = InitialTimesheetModel()
+				} else if m.ActiveMode == TrainingMode && prevMode != TrainingMode {
+					m.TrainingModel = InitialTrainingModel()
 				}
 			case "$":
 				// Switch to training budget view

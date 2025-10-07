@@ -3,11 +3,11 @@
 # Function to find the process ID of the running application
 find_pid() {
     # Look for the process in the Applications directory
-    if [ -f "$HOME/Applications/Timesheetz/timesheetz" ]; then
-        pgrep -f "$HOME/Applications/Timesheetz/timesheetz"
+    if [ -f "$HOME/Applications/Timesheetz/timesheet" ]; then
+        pgrep -f "$HOME/Applications/Timesheetz/timesheet"
     else
         # Fallback to looking in the current directory
-        pgrep -f "timesheetz"
+        pgrep -f "timesheet"
     fi
 }
 
@@ -29,12 +29,30 @@ stop_app() {
 
 # Function to start the application
 start_app() {
-    if [ -f "$HOME/Applications/Timesheetz/timesheetz" ]; then
+    if [ -f "$HOME/Applications/Timesheetz/timesheet" ]; then
         echo "Starting Timesheetz from Applications directory..."
-        "$HOME/Applications/Timesheetz/timesheetz" &
+        "$HOME/Applications/Timesheetz/timesheet" &
     else
         echo "Starting Timesheetz from current directory..."
-        ./timesheetz &
+        # Get the directory where this script is located
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+        
+        # Change to project root directory
+        cd "$PROJECT_ROOT" || {
+            echo "Error: Could not change to project directory: $PROJECT_ROOT"
+            exit 1
+        }
+        
+        # Check if the binary exists
+        if [ ! -f "./bin/timesheet" ]; then
+            echo "Error: Binary not found at ./bin/timesheet"
+            echo "Please run ./scripts/build.sh first to build the application"
+            exit 1
+        fi
+        
+        # Start the application
+        ./bin/timesheet &
     fi
     echo "Timesheetz started."
 }
