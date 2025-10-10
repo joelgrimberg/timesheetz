@@ -94,6 +94,17 @@ func (m *FormModel) prefillFromEntry(entry db.TimesheetEntry) {
 	m.inputs[sickHoursField].SetValue(strconv.Itoa(entry.Sick_hours))
 }
 
+// Clear all form fields except the date
+func (m *FormModel) clearForm() {
+	m.inputs[clientField].SetValue("")
+	m.inputs[clientHoursField].SetValue("")
+	m.inputs[trainingHoursField].SetValue("")
+	m.inputs[vacationHoursField].SetValue("")
+	m.inputs[idleHoursField].SetValue("")
+	m.inputs[holidayHoursField].SetValue("")
+	m.inputs[sickHoursField].SetValue("")
+}
+
 func (m FormModel) Init() tea.Cmd {
 	return textinput.Blink
 }
@@ -116,6 +127,24 @@ func (m FormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.handleSubmit()
 
 		case tea.KeyTab, tea.KeyShiftTab, tea.KeyUp, tea.KeyDown:
+			// If leaving the date field, check if entry exists for that date
+			if m.focused == dateField {
+				date := m.inputs[dateField].Value()
+				if isValidDate(date) {
+					// Try to load existing entry for this date
+					entry, err := db.GetTimesheetEntryByDate(date)
+					if err == nil {
+						// Entry exists, populate the form
+						m.prefillFromEntry(entry)
+						m.isEditing = true
+					} else {
+						// No entry exists, clear the form
+						m.clearForm()
+						m.isEditing = false
+					}
+				}
+			}
+
 			// Handle navigation between fields
 			// Change focus
 			if msg.Type == tea.KeyUp || msg.Type == tea.KeyShiftTab {

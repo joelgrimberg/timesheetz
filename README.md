@@ -238,110 +238,15 @@ Log files can be found in the following locations:
 
 ## API Documentation
 
-The application provides a REST API for programmatic access. See the
-[API documentation](docs/api.md) for available endpoints and examples.
+The application provides a REST API for programmatic access to all timesheet functionality. The API supports:
 
-### Training Budget API
+- Timesheet entry management (create, read, update, delete)
+- Training budget tracking
+- Training and vacation hours calculations
+- Overview summaries
+- Export functionality
 
-The training budget API provides endpoints for managing training budget entries and retrieving training hours.
-
-#### Endpoints
-
-1. **Get Training Budget Entries**
-   ```http
-   GET /api/training-budget?year=2024
-   ```
-   Returns all training budget entries for the specified year.
-
-2. **Create Training Budget Entry**
-   ```http
-   POST /api/training-budget
-   Content-Type: application/json
-
-   {
-     "date": "2024-03-15",
-     "training_name": "API Test Training",
-     "hours": 8,
-     "cost_without_vat": 1000.00
-   }
-   ```
-   Creates a new training budget entry.
-
-3. **Update Training Budget Entry**
-   ```http
-   PUT /api/training-budget
-   Content-Type: application/json
-
-   {
-     "id": 1,
-     "date": "2024-03-15",
-     "training_name": "Updated API Test Training",
-     "hours": 16,
-     "cost_without_vat": 2000.00
-   }
-   ```
-   Updates an existing training budget entry.
-
-4. **Delete Training Budget Entry**
-   ```http
-   DELETE /api/training-budget?id=1
-   ```
-   Deletes a training budget entry by ID.
-
-5. **Get Total Training Hours**
-   ```http
-   GET /api/training-hours?year=2024
-   ```
-   Returns the total training hours for the specified year.
-
-#### Example Usage
-
-```bash
-# Get all training budget entries for 2024
-curl -X GET "http://localhost:8080/api/training-budget?year=2024"
-
-# Create a new training budget entry
-curl -X POST "http://localhost:8080/api/training-budget" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "date": "2024-03-15",
-    "training_name": "API Test Training",
-    "hours": 8,
-    "cost_without_vat": 1000.00
-  }'
-
-# Get total training hours for 2024
-curl -X GET "http://localhost:8080/api/training-hours?year=2024"
-```
-
-### Vacation Hours API
-
-The vacation hours API provides endpoints for retrieving vacation hours information.
-
-#### Endpoints
-
-1. **Get Vacation Hours Information**
-   ```http
-   GET /api/vacation-hours?year=2024
-   ```
-   Returns vacation hours information including total, used, and available hours for the specified year.
-
-#### Example Usage
-
-```bash
-# Get vacation hours information for 2024
-curl -X GET "http://localhost:8080/api/vacation-hours?year=2024"
-```
-
-**Response:**
-```json
-{
-  "year": 2024,
-  "total_hours": 180,
-  "used_hours": 45,
-  "available_hours": 135
-}
-```
+For complete API documentation with curl examples for every endpoint, see the [API documentation](docs/api.md).
 
 ## TODO
 

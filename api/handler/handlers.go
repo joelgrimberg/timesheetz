@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 	"timesheet/internal/config"
 	"timesheet/internal/db"
 
@@ -261,5 +262,77 @@ func GetVacationHours(c *gin.Context) {
 		"total_hours":     totalHours,
 		"used_hours":      usedHours,
 		"available_hours": availableHours,
+	})
+}
+
+// GetOverview handles GET requests for overview data (training and vacation days left)
+func GetOverview(c *gin.Context) {
+	year := c.Query("year")
+	var yearInt int
+	var err error
+
+	if year == "" {
+		// Default to current year
+		yearInt = time.Now().Year()
+	} else {
+		yearInt, err = strconv.Atoi(year)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid year parameter"})
+			return
+		}
+	}
+
+	// Get config
+	cfg, err := config.GetConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read configuration"})
+		return
+	}
+
+	// Calculate training hours
+	trainingEntries, err := db.GetTrainingEntriesForYear(yearInt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get training entries"})
+		return
+	}
+
+	var totalTrainingHours int
+	for _, entry := range trainingEntries {
+		totalTrainingHours += entry.Training_hours
+	}
+
+	trainingHoursLeft := cfg.TrainingHours.YearlyTarget - totalTrainingHours
+	trainingDaysLeft := float64(trainingHoursLeft) / 9.0
+
+	// Calculate vacation hours
+	vacationEntries, err := db.GetVacationEntriesForYear(yearInt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get vacation entries"})
+		return
+	}
+
+	var totalVacationHours int
+	for _, entry := range vacationEntries {
+		totalVacationHours += entry.Vacation_hours
+	}
+
+	vacationHoursLeft := cfg.VacationHours.YearlyTarget - totalVacationHours
+	vacationDaysLeft := float64(vacationHoursLeft) / 9.0
+
+	// Return overview data
+	c.JSON(http.StatusOK, gin.H{
+		"year": yearInt,
+		"training": gin.H{
+			"total_hours":     cfg.TrainingHours.YearlyTarget,
+			"used_hours":      totalTrainingHours,
+			"available_hours": trainingHoursLeft,
+			"days_left":       trainingDaysLeft,
+		},
+		"vacation": gin.H{
+			"total_hours":     cfg.VacationHours.YearlyTarget,
+			"used_hours":      totalVacationHours,
+			"available_hours": vacationHoursLeft,
+			"days_left":       vacationDaysLeft,
+		},
 	})
 }

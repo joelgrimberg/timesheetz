@@ -14,6 +14,7 @@ type AppMode int
 
 const (
 	TimesheetMode AppMode = iota
+	OverviewMode
 	TrainingMode
 	TrainingBudgetMode
 	VacationMode
@@ -26,6 +27,7 @@ type RefreshMsg struct{}
 
 // AppModel is the top-level model that contains both timesheet and form models
 type AppModel struct {
+	OverviewModel           OverviewModel
 	TimesheetModel          TimesheetModel
 	TrainingModel           TrainingModel
 	TrainingBudgetModel     TrainingBudgetModel
@@ -39,6 +41,7 @@ type AppModel struct {
 
 func NewAppModel(addMode bool) AppModel {
 	model := AppModel{
+		OverviewModel:           InitialOverviewModel(),
 		TimesheetModel:          InitialTimesheetModel(),
 		TrainingModel:           InitialTrainingModel(),
 		TrainingBudgetModel:     InitialTrainingBudgetModel(),
@@ -64,6 +67,8 @@ func (m AppModel) Init() tea.Cmd {
 	switch m.ActiveMode {
 	case TimesheetMode:
 		return m.TimesheetModel.Init()
+	case OverviewMode:
+		return m.OverviewModel.Init()
 	case FormMode:
 		return m.FormModel.Init()
 	case TrainingMode:
@@ -118,19 +123,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Move to previous tab
 				prevMode := m.ActiveMode
 				switch m.ActiveMode {
-				case TrainingMode:
+				case TimesheetMode:
+					// Wrap around to the last tab
+					m.ActiveMode = VacationMode
+				case OverviewMode:
 					m.ActiveMode = TimesheetMode
+				case TrainingMode:
+					m.ActiveMode = OverviewMode
 				case TrainingBudgetMode:
 					m.ActiveMode = TrainingMode
 				case VacationMode:
 					m.ActiveMode = TrainingBudgetMode
-				case TimesheetMode:
-					// Wrap around to the last tab
-					m.ActiveMode = VacationMode
 				}
 				// Refresh models when switching to them
 				if m.ActiveMode == TimesheetMode && prevMode != TimesheetMode {
 					m.TimesheetModel = InitialTimesheetModel()
+				} else if m.ActiveMode == OverviewMode && prevMode != OverviewMode {
+					m.OverviewModel = InitialOverviewModel()
 				} else if m.ActiveMode == TrainingMode && prevMode != TrainingMode {
 					m.TrainingModel = InitialTrainingModel()
 				}
@@ -139,6 +148,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prevMode := m.ActiveMode
 				switch m.ActiveMode {
 				case TimesheetMode:
+					m.ActiveMode = OverviewMode
+				case OverviewMode:
 					m.ActiveMode = TrainingMode
 				case TrainingMode:
 					m.ActiveMode = TrainingBudgetMode
@@ -151,6 +162,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Refresh models when switching to them
 				if m.ActiveMode == TimesheetMode && prevMode != TimesheetMode {
 					m.TimesheetModel = InitialTimesheetModel()
+				} else if m.ActiveMode == OverviewMode && prevMode != OverviewMode {
+					m.OverviewModel = InitialOverviewModel()
 				} else if m.ActiveMode == TrainingMode && prevMode != TrainingMode {
 					m.TrainingModel = InitialTrainingModel()
 				}
@@ -162,6 +175,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ActiveMode = VacationMode
 			case "r":
 				// Refresh all views
+				m.OverviewModel = InitialOverviewModel()
 				m.TimesheetModel = InitialTimesheetModel()
 				m.TrainingModel = InitialTrainingModel()
 				m.TrainingBudgetModel = InitialTrainingBudgetModel()
@@ -174,6 +188,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle refresh message
 	if _, ok := msg.(RefreshMsg); ok {
 		// Refresh all views
+		m.OverviewModel = InitialOverviewModel()
 		m.TimesheetModel = InitialTimesheetModel()
 		m.TrainingModel = InitialTrainingModel()
 		m.TrainingBudgetModel = InitialTrainingBudgetModel()
@@ -248,6 +263,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.FormModel = formModel.(FormModel)
 		return m, cmd
 
+	case OverviewMode:
+		// Update overview model
+		overviewModel, cmd := m.OverviewModel.Update(msg)
+		m.OverviewModel = overviewModel.(OverviewModel)
+		return m, cmd
+
 	case TrainingMode:
 		// Update training model
 		trainingModel, cmd := m.TrainingModel.Update(msg)
@@ -292,7 +313,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m AppModel) View() string {
 	// Render tabs
 	var renderedTabs []string
-	for i, t := range []string{"Timesheet", "Training", "Training Budget", "Vacation"} {
+	for i, t := range []string{"Timesheet", "Overview", "Training", "Training Budget", "Vacation"} {
 		var style lipgloss.Style
 		if i == int(m.ActiveMode) {
 			style = activeTabStyle
@@ -310,6 +331,8 @@ func (m AppModel) View() string {
 	switch m.ActiveMode {
 	case TimesheetMode:
 		content = m.TimesheetModel.View()
+	case OverviewMode:
+		content = m.OverviewModel.View()
 	case TrainingMode:
 		content = m.TrainingModel.View()
 	case TrainingBudgetMode:
