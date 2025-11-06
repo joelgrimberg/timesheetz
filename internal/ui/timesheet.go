@@ -32,6 +32,7 @@ import (
 	"strings"
 	"time"
 	"timesheet/internal/config"
+	"timesheet/internal/datalayer"
 	"timesheet/internal/db"
 	printExcel "timesheet/internal/print-excel"
 	printPDF "timesheet/internal/print-pdf"
@@ -335,7 +336,8 @@ func sendDocument(content string, sendAsEmail bool, year int, month time.Month) 
 
 	if format == "excel" {
 		// Fetch timesheet entries
-		entries, err := db.GetAllTimesheetEntries(year, month)
+		dataLayer := datalayer.GetDataLayer()
+		entries, err := dataLayer.GetAllTimesheetEntries(year, month)
 		if err != nil {
 			return "", fmt.Errorf("error fetching timesheet entries: %v", err)
 		}
@@ -500,7 +502,8 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Delete the original entry from the database
 			selectedDate := row[0]
-			err := db.DeleteTimesheetEntryByDate(selectedDate)
+			dataLayer := datalayer.GetDataLayer()
+			err := dataLayer.DeleteTimesheetEntryByDate(selectedDate)
 			if err != nil {
 				return m, tea.Printf("Error moving entry: %v", err)
 			}
@@ -539,14 +542,15 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Check if an entry already exists for this date
-			existingEntry, err := db.GetTimesheetEntryByDate(selectedDate)
+			dataLayer := datalayer.GetDataLayer()
+			existingEntry, err := dataLayer.GetTimesheetEntryByDate(selectedDate)
 			if err == nil {
 				// Entry exists, update it
 				entry.Id = existingEntry.Id // Keep the same ID
-				err = db.UpdateTimesheetEntry(entry)
+				err = dataLayer.UpdateTimesheetEntry(entry)
 			} else {
 				// Entry doesn't exist, add a new one
-				err = db.AddTimesheetEntry(entry)
+				err = dataLayer.AddTimesheetEntry(entry)
 			}
 
 			if err != nil {
@@ -583,7 +587,8 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			selectedDate := m.table.SelectedRow()[0]
 			cursorRow := m.table.Cursor()
 			// Delete the entry
-			err := db.DeleteTimesheetEntryByDate(selectedDate)
+			dataLayer := datalayer.GetDataLayer()
+			err := dataLayer.DeleteTimesheetEntryByDate(selectedDate)
 			if err != nil {
 				return m, tea.Printf("Error clearing entry: %v", err)
 			}
@@ -705,7 +710,8 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 	}
 
 	// Fetch timesheet entries for the specified month
-	entries, err := db.GetAllTimesheetEntries(year, month)
+	dataLayer := datalayer.GetDataLayer()
+	entries, err := dataLayer.GetAllTimesheetEntries(year, month)
 	if err != nil {
 		// If there's an error, we'll continue with an empty table
 		log.Printf("Warning: Error fetching timesheet entries: %v", err)

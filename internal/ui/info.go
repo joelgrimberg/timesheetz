@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 	"timesheet/internal/config"
+	"timesheet/internal/datalayer"
 	"timesheet/internal/db"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -370,7 +371,8 @@ func (m *InfoModel) checkAllDataLoaded() bool {
 
 // loadTrainingData loads training data for the current year
 func (m *InfoModel) loadTrainingData() tea.Msg {
-	entries, err := db.GetTrainingEntriesForYear(m.trainingCurrentYear)
+	dataLayer := datalayer.GetDataLayer()
+	entries, err := dataLayer.GetTrainingEntriesForYear(m.trainingCurrentYear)
 	if err != nil {
 		// If database query fails, return empty data instead of error
 		// This allows the InfoModel to become ready even if there are database issues
@@ -399,7 +401,8 @@ func (m *InfoModel) loadTrainingData() tea.Msg {
 
 // loadVacationData loads vacation data for the current year from timesheet table only
 func (m *InfoModel) loadVacationData() tea.Msg {
-	entries, err := db.GetVacationEntriesForYear(m.vacationCurrentYear)
+	dataLayer := datalayer.GetDataLayer()
+	entries, err := dataLayer.GetVacationEntriesForYear(m.vacationCurrentYear)
 	if err != nil {
 		// If database query fails, return empty data instead of error
 		// This allows the InfoModel to become ready even if there are database issues
@@ -438,7 +441,8 @@ func (m *InfoModel) loadVacationData() tea.Msg {
 
 // loadTrainingBudgetData loads training budget data for the current year
 func (m *InfoModel) loadTrainingBudgetData() tea.Msg {
-	entries, err := db.GetTrainingBudgetEntriesForYear(m.trainingBudgetCurrentYear)
+	dataLayer := datalayer.GetDataLayer()
+	entries, err := dataLayer.GetTrainingBudgetEntriesForYear(m.trainingBudgetCurrentYear)
 	if err != nil {
 		// If database query fails, return empty data instead of error
 		// This allows the InfoModel to become ready even if there are database issues

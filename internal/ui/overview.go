@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 	"timesheet/internal/config"
-	"timesheet/internal/db"
+	"timesheet/internal/datalayer"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -118,7 +118,8 @@ func InitialOverviewModel() OverviewModel {
 	}
 
 	// Calculate training days left
-	trainingEntries, err := db.GetTrainingEntriesForYear(currentYear)
+	dataLayer := datalayer.GetDataLayer()
+	trainingEntries, err := dataLayer.GetTrainingEntriesForYear(currentYear)
 	var totalTrainingHours int
 	if err == nil {
 		for _, entry := range trainingEntries {
@@ -129,7 +130,7 @@ func InitialOverviewModel() OverviewModel {
 	trainingDaysLeft := float64(trainingHoursLeft) / 9.0
 
 	// Calculate vacation days left
-	vacationEntries, err := db.GetVacationEntriesForYear(currentYear)
+	vacationEntries, err := dataLayer.GetVacationEntriesForYear(currentYear)
 	var totalVacationHours int
 	if err == nil {
 		for _, entry := range vacationEntries {
@@ -168,7 +169,8 @@ func (m OverviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Calculate training days left
-		trainingEntries, err := db.GetTrainingEntriesForYear(msg.Year)
+		dataLayer := datalayer.GetDataLayer()
+		trainingEntries, err := dataLayer.GetTrainingEntriesForYear(msg.Year)
 		var totalTrainingHours int
 		if err == nil {
 			for _, entry := range trainingEntries {
@@ -179,7 +181,7 @@ func (m OverviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.trainingDaysLeft = float64(trainingHoursLeft) / 9.0
 
 		// Calculate vacation days left
-		vacationEntries, err := db.GetVacationEntriesForYear(msg.Year)
+		vacationEntries, err := dataLayer.GetVacationEntriesForYear(msg.Year)
 		var totalVacationHours int
 		if err == nil {
 			for _, entry := range vacationEntries {

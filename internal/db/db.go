@@ -110,9 +110,9 @@ func GetDBPath() string {
 
 // InitializeDatabase creates the database and tables if they don't exist
 func InitializeDatabase(dbPath string) error {
-	// Ensure the directory exists
+	// Ensure the directory exists (skip for in-memory databases)
 	dir := filepath.Dir(dbPath)
-	if dir != "." && dir != "" {
+	if dir != "." && dir != "" && dbPath != ":memory:" {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory for database: %w", err)
 		}
@@ -133,9 +133,11 @@ func InitializeDatabase(dbPath string) error {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Set database permissions
-	if err := os.Chmod(dbPath, 0644); err != nil {
-		return fmt.Errorf("failed to set database permissions: %w", err)
+	// Set database permissions (skip for in-memory databases)
+	if dbPath != ":memory:" {
+		if err := os.Chmod(dbPath, 0644); err != nil {
+			return fmt.Errorf("failed to set database permissions: %w", err)
+		}
 	}
 
 	// Execute each statement separately to ensure all tables are created

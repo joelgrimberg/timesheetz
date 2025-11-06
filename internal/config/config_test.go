@@ -24,7 +24,8 @@ func TestSaveAndGetUserConfig(t *testing.T) {
 	defer restoreLogging()
 
 	// Remove any existing config file to start fresh
-	os.Remove("config.json")
+	configPath := GetConfigPath()
+	os.Remove(configPath)
 
 	// Create a temporary config for testing
 	testConfig := Config{
@@ -37,7 +38,7 @@ func TestSaveAndGetUserConfig(t *testing.T) {
 	SaveConfig(testConfig)
 
 	// Clean up the test file after the test
-	defer os.Remove("config.json")
+	defer os.Remove(configPath)
 
 	// Get the user config
 	name, companyName, freeSpeech, err := GetUserConfig()
@@ -63,20 +64,25 @@ func TestGetAPIPort(t *testing.T) {
 	defer restoreLogging()
 
 	// Remove any existing config file to start fresh
-	os.Remove("config.json")
+	configPath := GetConfigPath()
+	os.Remove(configPath)
 
-	// Test default port when no config exists
+	// Create a minimal config file with default port
+	testConfig := Config{
+		APIPort: 8080,
+	}
+	SaveConfig(testConfig)
+	defer os.Remove(configPath)
+
+	// Test default port from config
 	port := GetAPIPort()
 	if port != 8080 {
 		t.Errorf("Expected default port 8080, got %d", port)
 	}
 
 	// Test custom port from config
-	testConfig := Config{
-		APIPort: 3000,
-	}
+	testConfig.APIPort = 3000
 	SaveConfig(testConfig)
-	defer os.Remove("config.json")
 
 	port = GetAPIPort()
 	if port != 3000 {
@@ -89,6 +95,8 @@ func TestGetAPIPort(t *testing.T) {
 	if port != 4000 {
 		t.Errorf("Expected runtime port 4000, got %d", port)
 	}
+	// Reset runtime port for other tests
+	SetRuntimePort(0)
 }
 
 func TestGetStartAPIServer(t *testing.T) {
@@ -97,7 +105,8 @@ func TestGetStartAPIServer(t *testing.T) {
 	defer restoreLogging()
 
 	// Remove any existing config file to start fresh
-	os.Remove("config.json")
+	configPath := GetConfigPath()
+	os.Remove(configPath)
 
 	// Test default value when no config exists
 	startServer := GetStartAPIServer()
@@ -110,7 +119,7 @@ func TestGetStartAPIServer(t *testing.T) {
 		StartAPIServer: true,
 	}
 	SaveConfig(testConfig)
-	defer os.Remove("config.json")
+	defer os.Remove(configPath)
 
 	startServer = GetStartAPIServer()
 	if !startServer {
@@ -124,7 +133,8 @@ func TestGetDocumentType(t *testing.T) {
 	defer restoreLogging()
 
 	// Remove any existing config file to start fresh
-	os.Remove("config.json")
+	configPath := GetConfigPath()
+	os.Remove(configPath)
 
 	// Test default value when no config exists
 	docType := GetDocumentType()
@@ -137,7 +147,7 @@ func TestGetDocumentType(t *testing.T) {
 		SendDocumentType: "excel",
 	}
 	SaveConfig(testConfig)
-	defer os.Remove("config.json")
+	defer os.Remove(configPath)
 
 	docType = GetDocumentType()
 	if docType != "excel" {
@@ -151,7 +161,8 @@ func TestGetEmailConfig(t *testing.T) {
 	defer restoreLogging()
 
 	// Remove any existing config file to start fresh
-	os.Remove("config.json")
+	configPath := GetConfigPath()
+	os.Remove(configPath)
 
 	// Test default values when no config exists
 	name, sendToOthers, recipient, sender, replyTo, apiKey, err := GetEmailConfig()
@@ -172,7 +183,7 @@ func TestGetEmailConfig(t *testing.T) {
 		ResendAPIKey:   "test_api_key",
 	}
 	SaveConfig(testConfig)
-	defer os.Remove("config.json")
+	defer os.Remove(configPath)
 
 	name, sendToOthers, recipient, sender, replyTo, apiKey, err = GetEmailConfig()
 	if err != nil {
@@ -204,7 +215,8 @@ func TestGetDevelopmentMode(t *testing.T) {
 	defer restoreLogging()
 
 	// Remove any existing config file to start fresh
-	os.Remove("config.json")
+	configPath := GetConfigPath()
+	os.Remove(configPath)
 
 	// Test default value when no config exists
 	devMode := GetDevelopmentMode()
@@ -217,7 +229,7 @@ func TestGetDevelopmentMode(t *testing.T) {
 		DevelopmentMode: true,
 	}
 	SaveConfig(testConfig)
-	defer os.Remove("config.json")
+	defer os.Remove(configPath)
 
 	devMode = GetDevelopmentMode()
 	if !devMode {

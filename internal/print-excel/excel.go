@@ -81,7 +81,7 @@ func TimesheetToExcel(timesheetData []TimesheetRow) error {
 		"Idle Hours", "Holiday Hours", "Sick Hours",
 	}
 	for i, header := range headers {
-		cell := fmt.Sprintf("%s5", string('A'+i))
+		cell := fmt.Sprintf("%s5", string(rune('A'+i)))
 		f.SetCellValue(sheetName, cell, header)
 	}
 

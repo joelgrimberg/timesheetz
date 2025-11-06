@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  timesheetz-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: timesheetz-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - timesheetz-data:/app/data
+    environment:
+      - TIMESHEETZ_DB_PATH=/app/data/timesheet.db
+    labels:
+      # Traefik labels
+      - "traefik.enable=true"
+      - "traefik.http.routers.timesheetz.rule=Host(`timesheetz.local`)"
+      - "traefik.http.routers.timesheetz.entrypoints=web"
+      - "traefik.http.services.timesheetz.loadbalancer.server.port=8080"
+      - "traefik.http.routers.timesheetz.middlewares=timesheetz-headers"
+      # Optional: Add TLS
+      # - "traefik.http.routers.timesheetz.tls=true"
+      # - "traefik.http.routers.timesheetz.tls.certresolver=letsencrypt"
+      # Headers middleware (optional)
+      - "traefik.http.middlewares.timesheetz-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  timesheetz-data:
+    driver: local
+

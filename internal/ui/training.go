@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 	"timesheet/internal/config"
+	"timesheet/internal/datalayer"
 	"timesheet/internal/db"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -162,7 +163,8 @@ func InitialTrainingModel() TrainingModel {
 	t.SetStyles(s)
 
 	// Get training entries for the current year
-	entries, err := db.GetTrainingEntriesForYear(currentYear)
+	dataLayer := datalayer.GetDataLayer()
+	entries, err := dataLayer.GetTrainingEntriesForYear(currentYear)
 	if err != nil {
 		return TrainingModel{
 			table:        t,

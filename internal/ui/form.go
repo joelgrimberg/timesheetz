@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+	"timesheet/internal/datalayer"
 	"timesheet/internal/db"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -132,7 +133,8 @@ func (m FormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				date := m.inputs[dateField].Value()
 				if isValidDate(date) {
 					// Try to load existing entry for this date
-					entry, err := db.GetTimesheetEntryByDate(date)
+					dataLayer := datalayer.GetDataLayer()
+					entry, err := dataLayer.GetTimesheetEntryByDate(date)
 					if err == nil {
 						// Entry exists, populate the form
 						m.prefillFromEntry(entry)
@@ -297,9 +299,11 @@ func (m FormModel) handleSubmit() tea.Cmd {
 
 	var saveErr error
 	if m.isEditing {
-		saveErr = db.UpdateTimesheetEntry(entry)
+		dataLayer := datalayer.GetDataLayer()
+		saveErr = dataLayer.UpdateTimesheetEntry(entry)
 	} else {
-		saveErr = db.AddTimesheetEntry(entry)
+		dataLayer := datalayer.GetDataLayer()
+		saveErr = dataLayer.AddTimesheetEntry(entry)
 	}
 
 	if saveErr != nil {

@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  timesheetz-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: timesheetz-api-local
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # Expose API on localhost:8080
+    volumes:
+      # Mount a volume for the SQLite database (persists data)
+      - timesheetz-db-local:/app/data
+      # Optionally, you can mount your existing database for testing:
+      # - ./test-data:/app/data
+    environment:
+      # Set the database path in the container
+      - TIMESHEETZ_DB_PATH=/app/data/timesheet.db
+      # The API server itself runs in local mode (direct DB access)
+      # The TUI client will connect to this API in remote/dual mode
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  timesheetz-db-local:
+    driver: local
+

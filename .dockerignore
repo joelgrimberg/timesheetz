@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+bin/
+build/
+*.exe
+timesheet
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+gin.log
+entries_debug.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Scripts (not needed in container)
+scripts/
+
+# Config files (will be set via environment)
+config.json
+com.timesheetz.plist
+
+# Excel files
+*.xlsx
+
+# Assets (not needed for API server)
+assets/
+
+# Test files
+*_test.go
+

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"timesheet/internal/logging"
 
 	"github.com/charmbracelet/huh"
@@ -38,6 +39,10 @@ type Config struct {
 	// API Server Configuration
 	StartAPIServer bool `json:"startAPIServer"`
 	APIPort        int  `json:"apiPort"`
+
+	// API Client Configuration (for remote mode)
+	APIMode    string `json:"apiMode"`    // "local", "dual", or "remote" (default: "local")
+	APIBaseURL string `json:"apiBaseURL"` // Base URL for remote API (e.g., "http://timesheetz.local")
 
 	// Database Location
 	DBLocation string `json:"dbLocation"`
@@ -185,7 +190,12 @@ func GetUserConfig() (name string, companyName string, freeSpeech string, err er
 
 func RequireConfig() {
 	configPath := GetConfigPath()
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+	logging.Log("Checking for config file at: %s", configPath)
+	_, err := os.Stat(configPath)
+	if err != nil {
+		// Only show setup if file doesn't exist
+		if os.IsNotExist(err) {
+			logging.Log("Config file not found, showing setup form...")
 		config := Config{
 			// User Information
 			Name:        "",
@@ -195,6 +205,10 @@ func RequireConfig() {
 			// API Server Configuration
 			StartAPIServer: true,
 			APIPort:        8080,
+
+			// API Client Configuration
+			APIMode:    "local", // Default to local mode
+			APIBaseURL: "",      // Empty means use local database
 
 			// Database Location
 			DBLocation: "",
@@ -438,19 +452,35 @@ func RequireConfig() {
 		// Save the configuration
 		SaveConfig(config)
 	} else {
-		logging.Log("Config file is found!")
+			// File exists but there's another error (permissions, etc.)
+			logging.Log("Warning: Error checking config file at %s: %v", configPath, err)
+			logging.Log("Continuing anyway...")
+		}
+	} else {
+		// Config file exists and is accessible
+		logging.Log("Config file found at: %s", configPath)
 	}
 }
 
 // GetConfigPath returns the path to the config file
+// It checks both the standard config directory and ~/.config for backward compatibility
 func GetConfigPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Failed to get user home directory: %v", err)
+	}
+	
+	// First, check the legacy location (~/.config/timesheetz/config.json)
+	legacyPath := filepath.Join(homeDir, ".config", "timesheetz", "config.json")
+	if _, err := os.Stat(legacyPath); err == nil {
+		// Legacy config file exists, use it
+		return legacyPath
+	}
+	
+	// Otherwise, use the standard config directory
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		// Fallback to home directory if UserConfigDir fails
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			log.Fatalf("Failed to get user home directory: %v", err)
-		}
+		// Fallback to .config if UserConfigDir fails
 		configDir = filepath.Join(homeDir, ".config")
 	}
 	return filepath.Join(configDir, "timesheetz", "config.json")
@@ -459,6 +489,13 @@ func GetConfigPath() string {
 // SaveConfig saves the configuration to a file
 func SaveConfig(config Config) error {
 	configPath := GetConfigPath()
+	
+	// Ensure the directory exists
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+	
 	configJSON, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
@@ -547,10 +584,31 @@ func writeDebugToFile(debugInfo map[string]interface{}) {
 
 // GetDBPath returns the path to the database file, using config if set
 func GetDBPath() string {
+	// Check environment variable first (useful for Docker/containerized deployments)
+	if dbPath := os.Getenv("TIMESHEETZ_DB_PATH"); dbPath != "" {
+		// Expand ~ in path if present
+		if strings.HasPrefix(dbPath, "~/") {
+			homeDir, err := os.UserHomeDir()
+			if err == nil {
+				dbPath = filepath.Join(homeDir, dbPath[2:])
+			}
+		}
+		return dbPath
+	}
+	
+	// Check config file
 	config, err := GetConfig()
 	if err == nil && config.DBLocation != "" {
+		// Expand ~ in path if present
+		if strings.HasPrefix(config.DBLocation, "~/") {
+			homeDir, err := os.UserHomeDir()
+			if err == nil {
+				return filepath.Join(homeDir, config.DBLocation[2:])
+			}
+		}
 		return config.DBLocation
 	}
+	
 	// Default location
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -562,4 +620,63 @@ func GetDBPath() string {
 		configDir = filepath.Join(homeDir, ".config")
 	}
 	return filepath.Join(configDir, "timesheetz", "timesheet.db")
+}
+
+// GetAPIMode returns the API mode: "local", "dual", or "remote"
+func GetAPIMode() string {
+	// Check environment variable first
+	if envMode := os.Getenv("TIMESHEETZ_API_MODE"); envMode != "" {
+		if envMode == "local" || envMode == "dual" || envMode == "remote" {
+			return envMode
+		}
+	}
+
+	// Fall back to config file
+	config, err := GetConfig()
+	if err != nil {
+		return "local" // Default to local mode
+	}
+
+	if config.APIMode == "" {
+		return "local" // Default to local mode
+	}
+
+	if config.APIMode != "local" && config.APIMode != "dual" && config.APIMode != "remote" {
+		logging.Log("Invalid apiMode '%s', defaulting to 'local'", config.APIMode)
+		return "local"
+	}
+
+	return config.APIMode
+}
+
+// GetAPIBaseURL returns the base URL for the remote API
+func GetAPIBaseURL() string {
+	// Check environment variable first
+	if envURL := os.Getenv("TIMESHEETZ_API_URL"); envURL != "" {
+		return envURL
+	}
+
+	// Fall back to config file
+	config, err := GetConfig()
+	if err != nil {
+		return ""
+	}
+
+	// If apiMode is "local", return empty string (no remote API)
+	if config.APIMode == "local" || config.APIMode == "" {
+		return ""
+	}
+
+	// If apiBaseURL is set, use it
+	if config.APIBaseURL != "" {
+		return config.APIBaseURL
+	}
+
+	// If apiMode is "dual" or "remote" but no base URL, try to construct from port
+	// This is a fallback for backward compatibility
+	if config.APIPort != 0 {
+		return fmt.Sprintf("http://localhost:%d", config.APIPort)
+	}
+
+	return ""
 }

@@ -50,15 +50,15 @@ func UpdateTimesheet(c *gin.Context) {
 		return
 	}
 
-	if err := db.UpdateTimesheetEntryById(id, map[string]any{
-		"client_name":    entry.Client_name,
+	updateData := map[string]any{
 		"client_hours":   entry.Client_hours,
 		"vacation_hours": entry.Vacation_hours,
 		"idle_hours":     entry.Idle_hours,
 		"training_hours": entry.Training_hours,
 		"holiday_hours":  entry.Holiday_hours,
 		"sick_hours":     entry.Sick_hours,
-	}); err != nil {
+	}
+	if err := db.UpdateTimesheetEntryById(id, updateData); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

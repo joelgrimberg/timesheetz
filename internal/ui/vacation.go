@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 	"timesheet/internal/config"
+	"timesheet/internal/datalayer"
 	"timesheet/internal/db"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -162,7 +163,8 @@ func InitialVacationModel() VacationModel {
 	t.SetStyles(s)
 
 	// Get vacation entries for the current year
-	entries, err := db.GetVacationEntriesForYear(currentYear)
+	dataLayer := datalayer.GetDataLayer()
+	entries, err := dataLayer.GetVacationEntriesForYear(currentYear)
 	if err != nil {
 		return VacationModel{
 			table:        t,

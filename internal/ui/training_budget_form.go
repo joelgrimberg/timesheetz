@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 
+	"timesheet/internal/datalayer"
 	"timesheet/internal/db"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -72,7 +73,8 @@ func (m TrainingBudgetFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Cost_without_vat: parseTrainingCost(m.inputs[2].Value()),
 				}
 
-				if err := db.AddTrainingBudgetEntry(entry); err != nil {
+				dataLayer := datalayer.GetDataLayer()
+				if err := dataLayer.AddTrainingBudgetEntry(entry); err != nil {
 					m.err = err
 					return m, nil
 				}

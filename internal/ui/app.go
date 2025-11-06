@@ -2,7 +2,7 @@ package ui
 
 import (
 	"time"
-	"timesheet/internal/db"
+	"timesheet/internal/datalayer"
 
 	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +18,7 @@ const (
 	TrainingMode
 	TrainingBudgetMode
 	VacationMode
+	ConfigMode
 	FormMode
 	TrainingBudgetFormMode
 )
@@ -32,6 +33,7 @@ type AppModel struct {
 	TrainingModel           TrainingModel
 	TrainingBudgetModel     TrainingBudgetModel
 	VacationModel           VacationModel
+	ConfigModel             ConfigModel
 	FormModel               FormModel
 	TrainingBudgetFormModel TrainingBudgetFormModel
 	ActiveMode              AppMode
@@ -46,6 +48,7 @@ func NewAppModel(addMode bool) AppModel {
 		TrainingModel:           InitialTrainingModel(),
 		TrainingBudgetModel:     InitialTrainingBudgetModel(),
 		VacationModel:           InitialVacationModel(),
+		ConfigModel:             InitialConfigModel(),
 		FormModel:               InitialFormModel(),
 		TrainingBudgetFormModel: InitialTrainingBudgetFormModel(),
 		ActiveMode:              TimesheetMode,
@@ -79,6 +82,8 @@ func (m AppModel) Init() tea.Cmd {
 		return m.TrainingBudgetFormModel.Init()
 	case VacationMode:
 		return m.VacationModel.Init()
+	case ConfigMode:
+		return m.ConfigModel.Init()
 	}
 	return nil
 }
@@ -125,7 +130,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch m.ActiveMode {
 				case TimesheetMode:
 					// Wrap around to the last tab
-					m.ActiveMode = VacationMode
+					m.ActiveMode = ConfigMode
 				case OverviewMode:
 					m.ActiveMode = TimesheetMode
 				case TrainingMode:
@@ -134,6 +139,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ActiveMode = TrainingMode
 				case VacationMode:
 					m.ActiveMode = TrainingBudgetMode
+				case ConfigMode:
+					m.ActiveMode = VacationMode
 				}
 				// Refresh models when switching to them
 				if m.ActiveMode == TimesheetMode && prevMode != TimesheetMode {
@@ -142,6 +149,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.OverviewModel = InitialOverviewModel()
 				} else if m.ActiveMode == TrainingMode && prevMode != TrainingMode {
 					m.TrainingModel = InitialTrainingModel()
+				} else if m.ActiveMode == ConfigMode && prevMode != ConfigMode {
+					m.ConfigModel = InitialConfigModel()
 				}
 			case ">":
 				// Move to next tab
@@ -156,6 +165,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case TrainingBudgetMode:
 					m.ActiveMode = VacationMode
 				case VacationMode:
+					m.ActiveMode = ConfigMode
+				case ConfigMode:
 					// Wrap around to the first tab
 					m.ActiveMode = TimesheetMode
 				}
@@ -166,6 +177,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.OverviewModel = InitialOverviewModel()
 				} else if m.ActiveMode == TrainingMode && prevMode != TrainingMode {
 					m.TrainingModel = InitialTrainingModel()
+				} else if m.ActiveMode == ConfigMode && prevMode != ConfigMode {
+					m.ConfigModel = InitialConfigModel()
 				}
 			case "$":
 				// Switch to training budget view
@@ -180,6 +193,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.TrainingModel = InitialTrainingModel()
 				m.TrainingBudgetModel = InitialTrainingBudgetModel()
 				m.VacationModel = InitialVacationModel()
+				m.ConfigModel = InitialConfigModel()
 				return m, nil
 			}
 		}
@@ -193,6 +207,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.TrainingModel = InitialTrainingModel()
 		m.TrainingBudgetModel = InitialTrainingBudgetModel()
 		m.VacationModel = InitialVacationModel()
+		m.ConfigModel = InitialConfigModel()
 		return m, nil
 	}
 
@@ -220,7 +235,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.FormModel = InitialFormModelWithDate(date)
 
 			// Try to load existing data
-			entry, err := db.GetTimesheetEntryByDate(date)
+			dataLayer := datalayer.GetDataLayer()
+			entry, err := dataLayer.GetTimesheetEntryByDate(date)
 			if err == nil {
 				// Entry found, populate form fields
 				m.FormModel.prefillFromEntry(entry)
@@ -305,6 +321,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		vacationModel, cmd := m.VacationModel.Update(msg)
 		m.VacationModel = vacationModel.(VacationModel)
 		return m, cmd
+
+	case ConfigMode:
+		// Update config model
+		configModel, cmd := m.ConfigModel.Update(msg)
+		m.ConfigModel = configModel.(ConfigModel)
+		return m, cmd
 	}
 
 	return m, nil
@@ -313,9 +335,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m AppModel) View() string {
 	// Render tabs
 	var renderedTabs []string
-	for i, t := range []string{"Timesheet", "Overview", "Training", "Training Budget", "Vacation"} {
+	tabs := []string{"Timesheet", "Overview", "Training", "Training Budget", "Vacation", "Config"}
+	// Map tab names to their corresponding modes
+	tabModes := []AppMode{TimesheetMode, OverviewMode, TrainingMode, TrainingBudgetMode, VacationMode, ConfigMode}
+	
+	for i, t := range tabs {
 		var style lipgloss.Style
-		if i == int(m.ActiveMode) {
+		if tabModes[i] == m.ActiveMode {
 			style = activeTabStyle
 		} else {
 			style = inactiveTabStyle
@@ -339,6 +365,8 @@ func (m AppModel) View() string {
 		content = m.TrainingBudgetModel.View()
 	case VacationMode:
 		content = m.VacationModel.View()
+	case ConfigMode:
+		content = m.ConfigModel.View()
 	case FormMode:
 		content = m.FormModel.View()
 	case TrainingBudgetFormMode:

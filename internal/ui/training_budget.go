@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"timesheet/internal/datalayer"
 	"timesheet/internal/db"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -208,7 +209,8 @@ func InitialTrainingBudgetModel() TrainingBudgetModel {
 	t.SetStyles(s)
 
 	// Get training budget entries for the current year
-	entries, err := db.GetTrainingBudgetEntriesForYear(currentYear)
+	dataLayer := datalayer.GetDataLayer()
+	entries, err := dataLayer.GetTrainingBudgetEntriesForYear(currentYear)
 	if err != nil {
 		return TrainingBudgetModel{
 			table:       t,
@@ -324,18 +326,19 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					date := row[0]
 
 					// Get the entry from the database using the date
-					entry, err := db.GetTrainingBudgetEntryByDate(date)
+					dataLayer := datalayer.GetDataLayer()
+					entry, err := dataLayer.GetTrainingBudgetEntryByDate(date)
 					if err != nil {
 						return m, tea.Printf("Error finding entry: %v", err)
 					}
 
 					// Delete the entry using its ID
-					if err := db.DeleteTrainingBudgetEntry(entry.Id); err != nil {
+					if err := dataLayer.DeleteTrainingBudgetEntry(entry.Id); err != nil {
 						return m, tea.Printf("Error deleting entry: %v", err)
 					}
 
 					// Get all entries for the current year
-					entries, err := db.GetTrainingBudgetEntriesForYear(m.currentYear)
+					entries, err := dataLayer.GetTrainingBudgetEntriesForYear(m.currentYear)
 					if err != nil {
 						return m, tea.Printf("Error refreshing entries: %v", err)
 					}
@@ -385,7 +388,8 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err != nil {
 						return m, nil
 					}
-					entry, err := db.GetTrainingBudgetEntry(id)
+					dataLayer := datalayer.GetDataLayer()
+					entry, err := dataLayer.GetTrainingBudgetEntry(id)
 					if err != nil {
 						// Handle error
 						return m, nil
