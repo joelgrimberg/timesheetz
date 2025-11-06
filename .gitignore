@@ -39,6 +39,8 @@ Temporary Items
 config.json
 logo.jpg
 
+timesheet
+
 # Test database
 timesheet.db
 timesheet.db-shm

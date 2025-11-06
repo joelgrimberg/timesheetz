@@ -20,6 +20,8 @@ type ConfigKeyMap struct {
 	Quit    key.Binding
 	PrevTab key.Binding
 	NextTab key.Binding
+	Enter   key.Binding
+	Escape  key.Binding
 }
 
 // DefaultConfigKeyMap returns the default keybindings
@@ -48,6 +50,14 @@ func DefaultConfigKeyMap() ConfigKeyMap {
 		NextTab: key.NewBinding(
 			key.WithKeys(">"),
 			key.WithHelp(">", "next tab"),
+		),
+		Enter: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "edit"),
+		),
+		Escape: key.NewBinding(
+			key.WithKeys("esc"),
+			key.WithHelp("esc", "cancel"),
 		),
 	}
 }
@@ -80,10 +90,13 @@ func (k ConfigKeyMap) FullHelp() [][]key.Binding {
 
 // ConfigModel represents the configuration view
 type ConfigModel struct {
-	table    table.Model
-	keys     ConfigKeyMap
-	help     help.Model
-	showHelp bool
+	table         table.Model
+	keys          ConfigKeyMap
+	help          help.Model
+	showHelp      bool
+	showModeModal bool
+	modeCursor    int
+	apiModeRowIdx int // Index of the "API Mode" row in the table
 }
 
 // InitialConfigModel creates a new config model
@@ -144,6 +157,7 @@ func InitialConfigModel() ConfigModel {
 
 	// API Client Configuration
 	rows = append(rows, table.Row{"API Client", ""})
+	apiModeRowIdx := len(rows) // Store the index of the API Mode row
 	if cfg.APIMode == "" {
 		rows = append(rows, table.Row{"  API Mode", "local (default)"})
 	} else {
@@ -202,11 +216,28 @@ func InitialConfigModel() ConfigModel {
 		t.SetCursor(0)
 	}
 
+	// Determine current mode index for modal cursor
+	currentMode := cfg.APIMode
+	if currentMode == "" {
+		currentMode = "local"
+	}
+	modeCursor := 0
+	modes := []string{"local", "dual", "remote"}
+	for i, mode := range modes {
+		if mode == currentMode {
+			modeCursor = i
+			break
+		}
+	}
+
 	return ConfigModel{
-		table:    t,
-		keys:     DefaultConfigKeyMap(),
-		help:     help.New(),
-		showHelp: false,
+		table:         t,
+		keys:          DefaultConfigKeyMap(),
+		help:          help.New(),
+		showHelp:      false,
+		showModeModal: false,
+		modeCursor:    modeCursor,
+		apiModeRowIdx: apiModeRowIdx,
 	}
 }
 
@@ -225,6 +256,62 @@ func (m ConfigModel) Init() tea.Cmd {
 func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// If modal is open, handle modal interactions
+	if m.showModeModal {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch {
+			case key.Matches(msg, m.keys.Escape):
+				// Close modal without saving
+				m.showModeModal = false
+				return m, nil
+			case key.Matches(msg, m.keys.Up):
+				// Move cursor up in modal
+				m.modeCursor--
+				if m.modeCursor < 0 {
+					m.modeCursor = 2 // Wrap to bottom (remote)
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.Down):
+				// Move cursor down in modal
+				m.modeCursor++
+				if m.modeCursor > 2 {
+					m.modeCursor = 0 // Wrap to top (local)
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.Enter):
+				// Save selected mode
+				modes := []string{"local", "dual", "remote"}
+				selectedMode := modes[m.modeCursor]
+				
+				// Load current config
+				cfg, err := config.GetConfig()
+				if err == nil {
+					cfg.APIMode = selectedMode
+					if err := config.SaveConfig(cfg); err == nil {
+						// Refresh the model to show updated value
+						m.showModeModal = false
+						// Save current cursor position
+						currentCursor := m.table.Cursor()
+						// Reinitialize to refresh the table
+						refreshed := InitialConfigModel()
+						m.table = refreshed.table
+						m.apiModeRowIdx = refreshed.apiModeRowIdx
+						// Restore cursor position (clamp to valid range)
+						if currentCursor < len(refreshed.table.Rows()) {
+							m.table.SetCursor(currentCursor)
+						} else {
+							m.table.SetCursor(m.apiModeRowIdx)
+						}
+					}
+				}
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
+	// Normal table interactions
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
@@ -232,6 +319,12 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showHelp = !m.showHelp
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
+		case key.Matches(msg, m.keys.Enter):
+			// Check if we're on the API Mode row
+			if m.table.Cursor() == m.apiModeRowIdx {
+				m.showModeModal = true
+				return m, nil
+			}
 		case key.Matches(msg, m.keys.Down):
 			m.table, cmd = m.table.Update(msg)
 			return m, cmd
@@ -259,7 +352,7 @@ func (m ConfigModel) View() string {
 			Render("↑/↓: Navigate • ?: Help • q: Quit • </>: Tabs")
 	}
 
-	return fmt.Sprintf(
+	content := fmt.Sprintf(
 		"%s\n%s\n%s%s",
 		titleStyle.Render("Configuration"),
 		lipgloss.NewStyle().
@@ -269,5 +362,63 @@ func (m ConfigModel) View() string {
 		helpView,
 		m.help.View(m.keys),
 	)
+
+	// If modal is open, overlay it on top
+	if m.showModeModal {
+		modes := []string{"local", "dual", "remote"}
+		modeDescriptions := []string{
+			"Use local database only",
+			"Use both local DB and remote API (for validation)",
+			"Use remote API only",
+		}
+
+		// Build modal content
+		var modalRows []string
+		modalRows = append(modalRows, lipgloss.NewStyle().Bold(true).Render("Select API Mode:"))
+		modalRows = append(modalRows, "")
+		
+		for i, mode := range modes {
+			var style lipgloss.Style
+			if i == m.modeCursor {
+				style = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("229")).
+					Background(lipgloss.Color("57")).
+					Padding(0, 1)
+			} else {
+				style = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("252")).
+					Padding(0, 1)
+			}
+			row := fmt.Sprintf("  %s - %s", style.Render(mode), modeDescriptions[i])
+			modalRows = append(modalRows, row)
+		}
+		
+		modalRows = append(modalRows, "")
+		modalRows = append(modalRows, lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render("↑/↓: Select • Enter: Confirm • Esc: Cancel"))
+
+		modalContent := lipgloss.JoinVertical(lipgloss.Left, modalRows...)
+		
+		// Style the modal with border
+		modal := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("62")).
+			Padding(1, 2).
+			Width(60).
+			Render(modalContent)
+
+		// Center the modal on screen (approximate)
+		modal = lipgloss.Place(
+			80, 20,
+			lipgloss.Center, lipgloss.Center,
+			modal,
+		)
+
+		// Overlay modal on content with a semi-transparent background effect
+		return lipgloss.JoinVertical(lipgloss.Left, content, "\n", modal)
+	}
+
+	return content
 }
 
