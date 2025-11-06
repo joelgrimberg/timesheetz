@@ -28,8 +28,10 @@ func Log(format string, v ...interface{}) {
 	if verbose {
 		// Print to console
 		fmt.Printf(format+"\n", v...)
-		// Also log to file
-		log.Printf(format, v...)
+		// Also log to file (only if logFile is not stderr)
+		if logFile != nil && logFile != os.Stderr {
+			log.Printf(format, v...)
+		}
 	}
 }
 
@@ -52,7 +54,10 @@ func SetupLogging() *os.File {
 
 	f, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatalf("Error opening log file: %v", err)
+		// In non-interactive environments (like Docker), fall back to stderr
+		// Don't use log.Fatalf as it would cause the program to exit
+		log.Printf("Warning: couldn't open log file %s: %v, using stderr", logPath, err)
+		return os.Stderr
 	}
 
 	// Create a multi-writer to write to both file and console

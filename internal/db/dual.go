@@ -105,14 +105,19 @@ func (d *DualLayer) GetTimesheetEntryByDate(date string) (TimesheetEntry, error)
 
 // AddTimesheetEntry writes to both sources
 func (d *DualLayer) AddTimesheetEntry(entry TimesheetEntry) error {
+	logging.Log("DUAL MODE: AddTimesheetEntry - Writing to BOTH local DB and remote API...")
 	localErr := d.local.AddTimesheetEntry(entry)
 	remoteErr := d.remote.AddTimesheetEntry(entry)
 
 	if localErr != nil {
 		logging.Log("DUAL MODE: Local DB write failed: %v", localErr)
+	} else {
+		logging.Log("DUAL MODE: Local DB write succeeded")
 	}
 	if remoteErr != nil {
 		logging.Log("DUAL MODE: Remote API write failed: %v", remoteErr)
+	} else {
+		logging.Log("DUAL MODE: Remote API write succeeded")
 	}
 
 	// If both fail, return error

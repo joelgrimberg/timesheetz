@@ -1,6 +1,9 @@
 # Build stage
 FROM golang:1.24.1-alpine AS builder
 
+# Install build dependencies for CGO (required for SQLite)
+RUN apk add --no-cache gcc musl-dev sqlite-dev git
+
 WORKDIR /app
 
 # Copy go mod files

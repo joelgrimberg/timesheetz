@@ -91,12 +91,16 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Clear the screen
-	fmt.Print("\033[H\033[2J")
+	// Clear the screen (only if we have a terminal)
+	if !flags.noTUI {
+		fmt.Print("\033[H\033[2J")
+	}
 
 	// Set up logging
 	logFile := logging.SetupLogging()
-	defer logFile.Close()
+	if logFile != nil {
+		defer logFile.Close()
+	}
 	log.Println("Logging setup complete")
 
 	// Set verbose mode
@@ -113,6 +117,15 @@ func main() {
 		config.SetRuntimeDevMode(true)
 	}
 
+	// Add panic recovery at the top level
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "PANIC RECOVERED: %v\n", r)
+			log.Printf("Panic recovered: %v", r)
+			os.Exit(1)
+		}
+	}()
+	
 	// If port flag is set, set runtime port
 	if flags.port != 0 {
 		log.Println("Port flag detected:", flags.port)
@@ -120,7 +133,7 @@ func main() {
 	}
 
 	// Initialize the database
-	dbPath := db.GetDBPath()
+	dbPath := config.GetDBPath()
 	log.Printf("Database path: %s", dbPath)
 
 	// Check if database exists, if not initialize it
@@ -130,6 +143,8 @@ func main() {
 			log.Fatalf("Error initializing database: %v", err)
 		}
 		log.Println("Database initialized successfully")
+	} else if err != nil {
+		log.Fatalf("Error checking database: %v", err)
 	} else {
 		log.Println("Database file exists")
 	}

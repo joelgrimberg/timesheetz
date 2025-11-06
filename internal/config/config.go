@@ -11,6 +11,7 @@ import (
 	"timesheet/internal/logging"
 
 	"github.com/charmbracelet/huh"
+	"golang.org/x/term"
 )
 
 // Runtime development mode flag
@@ -76,6 +77,10 @@ func SetRuntimeDevMode(devMode bool) {
 // SetRuntimePort sets the runtime API port
 func SetRuntimePort(port int) {
 	runtimePort = port
+	// Use fmt.Printf directly to avoid potential logging issues
+	if logging.IsVerbose() {
+		fmt.Printf("Runtime API port set to: %v\n", port)
+	}
 	logging.Log("Runtime API port set to: %v", port)
 }
 
@@ -90,6 +95,11 @@ func GetAPIPort() int {
 	configPath := GetConfigPath()
 	configFile, err := os.ReadFile(configPath)
 	if err != nil {
+		// In non-interactive mode (like Docker), default to 8080 instead of exiting
+		if os.Getenv("TIMESHEETZ_NO_TUI") == "true" || !term.IsTerminal(int(os.Stdin.Fd())) {
+			logging.Log("Warning: Could not read config file, defaulting to port 8080")
+			return 8080
+		}
 		fmt.Println("Error: No port specified. Please either:")
 		fmt.Println("  1. Add 'apiPort' to your config.json file")
 		fmt.Println("  2. Run the program with --port flag")
@@ -195,6 +205,57 @@ func RequireConfig() {
 	if err != nil {
 		// Only show setup if file doesn't exist
 		if os.IsNotExist(err) {
+			// Check if we're in a non-interactive environment (like Docker)
+			// Check multiple conditions: terminal, environment variable, or --no-tui flag
+			isNonInteractive := !isTerminal(os.Stdin) || os.Getenv("TIMESHEETZ_NO_TUI") == "true"
+			if isNonInteractive {
+				logging.Log("Config file not found, but running in non-interactive mode. Creating default config...")
+				config := Config{
+					// User Information
+					Name:        "",
+					CompanyName: "",
+					FreeSpeech:  "",
+
+					// API Server Configuration
+					StartAPIServer: true,
+					APIPort:        8080,
+
+					// API Client Configuration
+					APIMode:    "local", // Default to local mode
+					APIBaseURL: "",      // Empty means use local database
+
+					// Database Location
+					DBLocation: "",
+
+					// Development Settings
+					DevelopmentMode: false,
+
+					// Document Settings
+					SendDocumentType: "pdf",
+
+					// Email Configuration
+					SendToOthers:   false,
+					RecipientEmail: "",
+					SenderEmail:    "",
+					ReplyToEmail:   "",
+					ResendAPIKey:   "",
+
+					// Training Hours Configuration
+					TrainingHours: TrainingHours{
+						YearlyTarget: 36, // Default to 36 hours
+						Category:     "Training",
+					},
+
+					// Vacation Hours Configuration
+					VacationHours: VacationHours{
+						YearlyTarget: 0, // Default to 0 hours
+						Category:     "Vacation",
+					},
+				}
+				SaveConfig(config)
+				logging.Log("Default config created successfully")
+				return
+			}
 			logging.Log("Config file not found, showing setup form...")
 		config := Config{
 			// User Information
@@ -647,6 +708,11 @@ func GetAPIMode() string {
 	}
 
 	return config.APIMode
+}
+
+// isTerminal checks if the given file descriptor is a terminal
+func isTerminal(f *os.File) bool {
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // GetAPIBaseURL returns the base URL for the remote API

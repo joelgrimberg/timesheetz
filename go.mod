@@ -6,7 +6,6 @@ require (
 	github.com/charmbracelet/bubbles v0.20.1-0.20250320170029-54f28b650198
 	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/huh v0.6.0
-	github.com/charmbracelet/huh/spinner v0.0.0-20250325161010-490bbff9f374
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-sql-driver/mysql v1.9.0
@@ -15,6 +14,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/resend/resend-go/v2 v2.17.0
 	github.com/xuri/excelize/v2 v2.9.0
+	golang.org/x/term v0.30.0
 )
 
 require (

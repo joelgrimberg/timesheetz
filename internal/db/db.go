@@ -133,13 +133,6 @@ func InitializeDatabase(dbPath string) error {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Set database permissions (skip for in-memory databases)
-	if dbPath != ":memory:" {
-		if err := os.Chmod(dbPath, 0644); err != nil {
-			return fmt.Errorf("failed to set database permissions: %w", err)
-		}
-	}
-
 	// Execute each statement separately to ensure all tables are created
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS timesheet (
@@ -167,6 +160,17 @@ func InitializeDatabase(dbPath string) error {
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("failed to execute statement: %w\nSQL: %s", err, stmt)
+		}
+	}
+
+	// Set database permissions AFTER the file is created (skip for in-memory databases)
+	if dbPath != ":memory:" {
+		// Check if file exists before trying to chmod
+		if _, err := os.Stat(dbPath); err == nil {
+			if err := os.Chmod(dbPath, 0644); err != nil {
+				// Log warning but don't fail - permissions might not be critical
+				logging.Log("Warning: failed to set database permissions: %v", err)
+			}
 		}
 	}
 

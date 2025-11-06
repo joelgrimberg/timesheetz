@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   timesheetz-api:
     build:
@@ -17,6 +15,8 @@ services:
     environment:
       # Set the database path in the container
       - TIMESHEETZ_DB_PATH=/app/data/timesheet.db
+      # Set non-interactive mode to skip config form
+      - TIMESHEETZ_NO_TUI=true
       # The API server itself runs in local mode (direct DB access)
       # The TUI client will connect to this API in remote/dual mode
     healthcheck:
