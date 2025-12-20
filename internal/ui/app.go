@@ -2,6 +2,7 @@ package ui
 
 import (
 	"time"
+	"timesheet/internal/config"
 	"timesheet/internal/datalayer"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -323,6 +324,31 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case ConfigMode:
+		// Handle mode selection messages from config modal
+		switch msg := msg.(type) {
+		case ModeSelectedMsg:
+			// Save selected mode
+			cfg, err := config.GetConfig()
+			if err == nil {
+				cfg.APIMode = msg.Mode
+				config.SaveConfig(cfg)
+			}
+			// Refresh config model and ensure cursor is on API Mode row
+			m.ConfigModel = InitialConfigModel()
+			// Set cursor to API Mode row
+			if m.ConfigModel.apiModeRowIdx < len(m.ConfigModel.table.Rows()) {
+				m.ConfigModel.table.SetCursor(m.ConfigModel.apiModeRowIdx)
+			}
+			return m, nil
+		case ModeCancelledMsg:
+			// Just refresh config model to close modal and ensure cursor is on API Mode row
+			m.ConfigModel = InitialConfigModel()
+			// Set cursor to API Mode row
+			if m.ConfigModel.apiModeRowIdx < len(m.ConfigModel.table.Rows()) {
+				m.ConfigModel.table.SetCursor(m.ConfigModel.apiModeRowIdx)
+			}
+			return m, nil
+		}
 		// Update config model
 		configModel, cmd := m.ConfigModel.Update(msg)
 		m.ConfigModel = configModel.(ConfigModel)
