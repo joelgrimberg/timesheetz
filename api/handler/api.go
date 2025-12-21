@@ -176,6 +176,48 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 		// Get last client name
 		api.GET("/last-client", GetLastClientName)
 
+		// Client routes
+		api.GET("/clients", func(c *gin.Context) {
+			GetClients(c)
+		})
+		api.GET("/clients/:id", func(c *gin.Context) {
+			GetClient(c)
+		})
+		api.POST("/clients", func(c *gin.Context) {
+			CreateClient(c)
+			sendRefresh()
+		})
+		api.PUT("/clients/:id", func(c *gin.Context) {
+			UpdateClient(c)
+			sendRefresh()
+		})
+		api.DELETE("/clients/:id", func(c *gin.Context) {
+			DeleteClient(c)
+			sendRefresh()
+		})
+
+		// Client rate routes
+		api.GET("/clients/:id/rates", func(c *gin.Context) {
+			GetClientRates(c)
+		})
+		api.POST("/clients/:id/rates", func(c *gin.Context) {
+			CreateClientRate(c)
+			sendRefresh()
+		})
+		api.PUT("/client-rates/:id", func(c *gin.Context) {
+			UpdateClientRate(c)
+			sendRefresh()
+		})
+		api.DELETE("/client-rates/:id", func(c *gin.Context) {
+			DeleteClientRate(c)
+			sendRefresh()
+		})
+
+		// Earnings route
+		api.GET("/earnings", func(c *gin.Context) {
+			GetEarnings(c)
+		})
+
 		// Export routes
 		api.GET("/export/pdf", ExportPDF)
 		api.GET("/export/excel", ExportExcel)

@@ -19,9 +19,13 @@ const (
 	TrainingMode
 	TrainingBudgetMode
 	VacationMode
+	ClientsMode
+	EarningsMode
 	ConfigMode
 	FormMode
 	TrainingBudgetFormMode
+	ClientFormMode
+	ClientRatesModalMode
 )
 
 // RefreshMsg is sent when the database is updated
@@ -34,9 +38,13 @@ type AppModel struct {
 	TrainingModel           TrainingModel
 	TrainingBudgetModel     TrainingBudgetModel
 	VacationModel           VacationModel
+	ClientsModel            ClientsModel
+	EarningsModel           EarningsModel
 	ConfigModel             ConfigModel
 	FormModel               FormModel
 	TrainingBudgetFormModel TrainingBudgetFormModel
+	ClientFormModel         ClientFormModel
+	ClientRatesModalModel   ClientRatesModalModel
 	ActiveMode              AppMode
 	Help                    help.Model
 	refreshChan             chan RefreshMsg
@@ -49,9 +57,12 @@ func NewAppModel(addMode bool) AppModel {
 		TrainingModel:           InitialTrainingModel(),
 		TrainingBudgetModel:     InitialTrainingBudgetModel(),
 		VacationModel:           InitialVacationModel(),
+		ClientsModel:            InitialClientsModel(),
+		EarningsModel:           InitialEarningsModel(),
 		ConfigModel:             InitialConfigModel(),
 		FormModel:               InitialFormModel(),
 		TrainingBudgetFormModel: InitialTrainingBudgetFormModel(),
+		ClientFormModel:         InitialClientFormModel(),
 		ActiveMode:              TimesheetMode,
 		Help:                    help.New(),
 		refreshChan:             make(chan RefreshMsg),
@@ -83,6 +94,14 @@ func (m AppModel) Init() tea.Cmd {
 		return m.TrainingBudgetFormModel.Init()
 	case VacationMode:
 		return m.VacationModel.Init()
+	case ClientsMode:
+		return m.ClientsModel.Init()
+	case ClientFormMode:
+		return m.ClientFormModel.Init()
+	case ClientRatesModalMode:
+		return m.ClientRatesModalModel.Init()
+	case EarningsMode:
+		return m.EarningsModel.Init()
 	case ConfigMode:
 		return m.ConfigModel.Init()
 	}
@@ -121,8 +140,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		// Only handle special keys when not in form modes
-		if m.ActiveMode != FormMode && m.ActiveMode != TrainingBudgetFormMode {
+		// Only handle special keys when not in form modes or client form/modal
+		if m.ActiveMode != FormMode && m.ActiveMode != TrainingBudgetFormMode && m.ActiveMode != ClientFormMode && m.ActiveMode != ClientRatesModalMode {
 			// Handle tab switching
 			switch keyMsg.String() {
 			case "<":
@@ -140,8 +159,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ActiveMode = TrainingMode
 				case VacationMode:
 					m.ActiveMode = TrainingBudgetMode
-				case ConfigMode:
+				case ClientsMode:
 					m.ActiveMode = VacationMode
+				case EarningsMode:
+					m.ActiveMode = ClientsMode
+				case ConfigMode:
+					m.ActiveMode = EarningsMode
 				}
 				// Refresh models when switching to them
 				if m.ActiveMode == TimesheetMode && prevMode != TimesheetMode {
@@ -166,6 +189,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case TrainingBudgetMode:
 					m.ActiveMode = VacationMode
 				case VacationMode:
+					m.ActiveMode = ClientsMode
+				case ClientsMode:
+					m.ActiveMode = EarningsMode
+				case EarningsMode:
 					m.ActiveMode = ConfigMode
 				case ConfigMode:
 					// Wrap around to the first tab
@@ -185,8 +212,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Switch to training budget view
 				m.ActiveMode = TrainingBudgetMode
 			case "v":
-				// Switch to vacation view
-				m.ActiveMode = VacationMode
+				// Switch to vacation view (but not when in ClientsMode, where 'v' views rates)
+				if m.ActiveMode != ClientsMode {
+					m.ActiveMode = VacationMode
+				}
 			case "r":
 				// Refresh all views
 				m.OverviewModel = InitialOverviewModel()
@@ -194,6 +223,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.TrainingModel = InitialTrainingModel()
 				m.TrainingBudgetModel = InitialTrainingBudgetModel()
 				m.VacationModel = InitialVacationModel()
+				m.ClientsModel = InitialClientsModel()
+				m.EarningsModel = InitialEarningsModel()
 				m.ConfigModel = InitialConfigModel()
 				return m, nil
 			}
@@ -208,6 +239,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.TrainingModel = InitialTrainingModel()
 		m.TrainingBudgetModel = InitialTrainingBudgetModel()
 		m.VacationModel = InitialVacationModel()
+		m.ClientsModel = InitialClientsModel()
+		m.EarningsModel = InitialEarningsModel()
 		m.ConfigModel = InitialConfigModel()
 		return m, nil
 	}
@@ -323,6 +356,69 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.VacationModel = vacationModel.(VacationModel)
 		return m, cmd
 
+	case ClientsMode:
+		// Handle add/edit client messages
+		if _, ok := msg.(AddClientMsg); ok {
+			m.ActiveMode = ClientFormMode
+			m.ClientFormModel.SetAddMode()
+			return m, m.ClientFormModel.Init()
+		}
+		if editMsg, ok := msg.(EditClientMsg); ok {
+			m.ActiveMode = ClientFormMode
+			m.ClientFormModel.SetEditMode(editMsg.Client)
+			return m, m.ClientFormModel.Init()
+		}
+		// Handle view/add client rates messages
+		if viewMsg, ok := msg.(ViewClientRatesMsg); ok {
+			m.ActiveMode = ClientRatesModalMode
+			m.ClientRatesModalModel = InitialClientRatesModalModel(viewMsg.ClientId)
+			return m, m.ClientRatesModalModel.Init()
+		}
+		if addMsg, ok := msg.(AddClientRateMsg); ok {
+			m.ActiveMode = ClientRatesModalMode
+			m.ClientRatesModalModel = InitialClientRatesModalModel(addMsg.ClientId)
+			// Switch to add mode immediately
+			m.ClientRatesModalModel.mode = RatesAddMode
+			return m, m.ClientRatesModalModel.Init()
+		}
+
+		// Update clients model
+		clientsModel, cmd := m.ClientsModel.Update(msg)
+		m.ClientsModel = clientsModel.(ClientsModel)
+		return m, cmd
+
+	case ClientFormMode:
+		// Check for special message to return to clients mode
+		if _, ok := msg.(SwitchToClientsMsg); ok {
+			m.ActiveMode = ClientsMode
+			m.ClientsModel = InitialClientsModel()
+			return m, nil
+		}
+
+		// Update client form model
+		clientFormModel, cmd := m.ClientFormModel.Update(msg)
+		m.ClientFormModel = clientFormModel.(ClientFormModel)
+		return m, cmd
+
+	case ClientRatesModalMode:
+		// Check for special message to close modal
+		if _, ok := msg.(CloseClientRatesModalMsg); ok {
+			m.ActiveMode = ClientsMode
+			m.ClientsModel = InitialClientsModel()
+			return m, nil
+		}
+
+		// Update client rates modal model
+		clientRatesModalModel, cmd := m.ClientRatesModalModel.Update(msg)
+		m.ClientRatesModalModel = clientRatesModalModel.(ClientRatesModalModel)
+		return m, cmd
+
+	case EarningsMode:
+		// Update earnings model
+		earningsModel, cmd := m.EarningsModel.Update(msg)
+		m.EarningsModel = earningsModel.(EarningsModel)
+		return m, cmd
+
 	case ConfigMode:
 		// Handle mode selection messages from config modal
 		switch msg := msg.(type) {
@@ -361,9 +457,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m AppModel) View() string {
 	// Render tabs
 	var renderedTabs []string
-	tabs := []string{"Timesheet", "Overview", "Training", "Training Budget", "Vacation", "Config"}
+	tabs := []string{"Timesheet", "Overview", "Training", "Training Budget", "Vacation", "Clients", "Earnings", "Config"}
 	// Map tab names to their corresponding modes
-	tabModes := []AppMode{TimesheetMode, OverviewMode, TrainingMode, TrainingBudgetMode, VacationMode, ConfigMode}
+	tabModes := []AppMode{TimesheetMode, OverviewMode, TrainingMode, TrainingBudgetMode, VacationMode, ClientsMode, EarningsMode, ConfigMode}
 	
 	for i, t := range tabs {
 		var style lipgloss.Style
@@ -391,6 +487,14 @@ func (m AppModel) View() string {
 		content = m.TrainingBudgetModel.View()
 	case VacationMode:
 		content = m.VacationModel.View()
+	case ClientsMode:
+		content = m.ClientsModel.View()
+	case ClientFormMode:
+		content = m.ClientFormModel.View()
+	case ClientRatesModalMode:
+		content = m.ClientRatesModalModel.View()
+	case EarningsMode:
+		content = m.EarningsModel.View()
 	case ConfigMode:
 		content = m.ConfigModel.View()
 	case FormMode:

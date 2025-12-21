@@ -144,7 +144,7 @@ func InitialVacationModel() VacationModel {
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithFocused(true),
-		table.WithHeight(25),
+		table.WithHeight(15),
 	)
 
 	// Set styles

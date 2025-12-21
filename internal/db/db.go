@@ -155,11 +155,40 @@ func InitializeDatabase(dbPath string) error {
 			cost_without_vat DECIMAL(10,2) NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_training_date ON training_budget(date);`,
+		`CREATE TABLE IF NOT EXISTS clients (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			is_active INTEGER DEFAULT 1
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);`,
+		`CREATE INDEX IF NOT EXISTS idx_clients_active ON clients(is_active);`,
+		`CREATE TABLE IF NOT EXISTS client_rates (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			client_id INTEGER NOT NULL,
+			hourly_rate DECIMAL(10,2) NOT NULL,
+			effective_date TEXT NOT NULL,
+			notes TEXT,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_client_rates_client ON client_rates(client_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_client_rates_date ON client_rates(effective_date);`,
+		`CREATE INDEX IF NOT EXISTS idx_client_rates_client_date ON client_rates(client_id, effective_date);`,
 	}
 
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("failed to execute statement: %w\nSQL: %s", err, stmt)
+		}
+	}
+
+	// Try to add client_id column to timesheet (may fail if already exists, which is OK)
+	_, err = db.Exec(`ALTER TABLE timesheet ADD COLUMN client_id INTEGER REFERENCES clients(id);`)
+	if err != nil {
+		// Log but don't fail - column probably already exists
+		if !strings.Contains(err.Error(), "duplicate column name") {
+			logging.Log("Note: Could not add client_id column (may already exist): %v", err)
 		}
 	}
 
@@ -192,6 +221,13 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 		// Filter by specific month and year
 		startDate := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 		endDate := time.Date(year, month+1, 0, 23, 59, 59, 999999999, time.UTC).Format("2006-01-02")
+
+		query = baseQuery + " WHERE date BETWEEN ? AND ?"
+		args = []any{startDate, endDate}
+	} else if year != 0 {
+		// Filter by year only (all months in the year)
+		startDate := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		endDate := time.Date(year, 12, 31, 23, 59, 59, 999999999, time.UTC).Format("2006-01-02")
 
 		query = baseQuery + " WHERE date BETWEEN ? AND ?"
 		args = []any{startDate, endDate}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 	"timesheet/internal/config"
 	"timesheet/internal/db"
@@ -303,6 +304,406 @@ func (c *Client) GetTrainingBudgetEntryByDate(date string) (db.TrainingBudgetEnt
 	}
 
 	return db.TrainingBudgetEntry{}, fmt.Errorf("training budget entry not found for date %s", date)
+}
+
+// Client Management Methods
+
+// GetAllClients retrieves all clients
+func (c *Client) GetAllClients() ([]db.Client, error) {
+	data, err := c.makeRequest("GET", "/api/clients", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var clients []db.Client
+	if err := json.Unmarshal(data, &clients); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return clients, nil
+}
+
+// GetActiveClients retrieves only active clients
+func (c *Client) GetActiveClients() ([]db.Client, error) {
+	data, err := c.makeRequest("GET", "/api/clients?active=true", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var clients []db.Client
+	if err := json.Unmarshal(data, &clients); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return clients, nil
+}
+
+// GetClientById retrieves a specific client by ID
+func (c *Client) GetClientById(id int) (db.Client, error) {
+	data, err := c.makeRequest("GET", fmt.Sprintf("/api/clients/%d", id), nil)
+	if err != nil {
+		return db.Client{}, err
+	}
+
+	var client db.Client
+	if err := json.Unmarshal(data, &client); err != nil {
+		return db.Client{}, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return client, nil
+}
+
+// GetClientByName retrieves a specific client by name
+func (c *Client) GetClientByName(name string) (db.Client, error) {
+	// Get all clients and find by name (API doesn't have direct name lookup)
+	clients, err := c.GetAllClients()
+	if err != nil {
+		return db.Client{}, err
+	}
+
+	for _, client := range clients {
+		if client.Name == name {
+			return client, nil
+		}
+	}
+
+	return db.Client{}, fmt.Errorf("client not found: %s", name)
+}
+
+// AddClient creates a new client
+func (c *Client) AddClient(client db.Client) (int, error) {
+	data, err := c.makeRequest("POST", "/api/clients", client)
+	if err != nil {
+		return 0, err
+	}
+
+	var result db.Client
+	if err := json.Unmarshal(data, &result); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return result.Id, nil
+}
+
+// UpdateClient updates an existing client
+func (c *Client) UpdateClient(client db.Client) error {
+	_, err := c.makeRequest("PUT", fmt.Sprintf("/api/clients/%d", client.Id), client)
+	return err
+}
+
+// DeleteClient deletes a client
+func (c *Client) DeleteClient(id int) error {
+	_, err := c.makeRequest("DELETE", fmt.Sprintf("/api/clients/%d", id), nil)
+	return err
+}
+
+// DeactivateClient deactivates a client
+func (c *Client) DeactivateClient(id int) error {
+	// The API DeleteClient actually does deactivation
+	return c.DeleteClient(id)
+}
+
+// Client Rate Methods
+
+// GetClientRates retrieves all rates for a specific client
+func (c *Client) GetClientRates(clientId int) ([]db.ClientRate, error) {
+	data, err := c.makeRequest("GET", fmt.Sprintf("/api/clients/%d/rates", clientId), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var rates []db.ClientRate
+	if err := json.Unmarshal(data, &rates); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return rates, nil
+}
+
+// GetClientRateById retrieves a specific rate by ID
+func (c *Client) GetClientRateById(id int) (db.ClientRate, error) {
+	// Get all clients and search for the rate
+	// This is inefficient but works without a dedicated endpoint
+	clients, err := c.GetAllClients()
+	if err != nil {
+		return db.ClientRate{}, err
+	}
+
+	for _, client := range clients {
+		rates, err := c.GetClientRates(client.Id)
+		if err != nil {
+			continue
+		}
+
+		for _, rate := range rates {
+			if rate.Id == id {
+				return rate, nil
+			}
+		}
+	}
+
+	return db.ClientRate{}, fmt.Errorf("rate not found with id %d", id)
+}
+
+// AddClientRate adds a new rate for a client
+func (c *Client) AddClientRate(rate db.ClientRate) error {
+	_, err := c.makeRequest("POST", fmt.Sprintf("/api/clients/%d/rates", rate.ClientId), rate)
+	return err
+}
+
+// UpdateClientRate updates an existing rate
+func (c *Client) UpdateClientRate(rate db.ClientRate) error {
+	_, err := c.makeRequest("PUT", fmt.Sprintf("/api/client-rates/%d", rate.Id), rate)
+	return err
+}
+
+// DeleteClientRate deletes a specific rate
+func (c *Client) DeleteClientRate(id int) error {
+	_, err := c.makeRequest("DELETE", fmt.Sprintf("/api/client-rates/%d", id), nil)
+	return err
+}
+
+// GetClientRateForDate returns the rate that was effective on the given date
+func (c *Client) GetClientRateForDate(clientId int, date string) (db.ClientRate, error) {
+	rates, err := c.GetClientRates(clientId)
+	if err != nil {
+		return db.ClientRate{}, err
+	}
+
+	// Find the most recent rate that's effective on or before the date
+	var validRate db.ClientRate
+	found := false
+
+	for _, rate := range rates {
+		if rate.EffectiveDate <= date {
+			if !found || rate.EffectiveDate > validRate.EffectiveDate {
+				validRate = rate
+				found = true
+			}
+		}
+	}
+
+	if !found {
+		return db.ClientRate{}, fmt.Errorf("no rate found for client %d on date %s", clientId, date)
+	}
+
+	return validRate, nil
+}
+
+// GetClientRateByName is a convenience function that combines client lookup and rate lookup
+func (c *Client) GetClientRateByName(clientName string, date string) (float64, error) {
+	client, err := c.GetClientByName(clientName)
+	if err != nil {
+		return 0.0, nil // Client doesn't exist, return 0 rate
+	}
+
+	rate, err := c.GetClientRateForDate(client.Id, date)
+	if err != nil {
+		return 0.0, nil // No rate found, return 0
+	}
+
+	return rate.HourlyRate, nil
+}
+
+// Earnings Methods
+
+// CalculateEarningsForYear calculates total earnings for a specific year
+func (c *Client) CalculateEarningsForYear(year int) (db.EarningsOverview, error) {
+	endpoint := fmt.Sprintf("/api/earnings?year=%d", year)
+	data, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return db.EarningsOverview{}, err
+	}
+
+	// The API returns formatted data, we need to parse it
+	var response struct {
+		Year         int    `json:"year"`
+		Month        int    `json:"month"`
+		TotalHours   int    `json:"total_hours"`
+		TotalEarnings string `json:"total_earnings"` // Formatted as Euro string
+		Entries      []struct {
+			Date        string `json:"date"`
+			ClientName  string `json:"client_name"`
+			ClientHours int    `json:"client_hours"`
+			HourlyRate  string `json:"hourly_rate"`  // Formatted as Euro string
+			Earnings    string `json:"earnings"`     // Formatted as Euro string
+		} `json:"entries"`
+	}
+
+	if err := json.Unmarshal(data, &response); err != nil {
+		return db.EarningsOverview{}, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	// Convert back to EarningsOverview with parsed Euro values
+	overview := db.EarningsOverview{
+		Year:       response.Year,
+		Month:      response.Month,
+		TotalHours: response.TotalHours,
+	}
+
+	// Parse total earnings
+	totalEarnings, _ := parseEuroFromAPI(response.TotalEarnings)
+	overview.TotalEarnings = totalEarnings
+
+	// Parse entries
+	for _, entry := range response.Entries {
+		hourlyRate, _ := parseEuroFromAPI(entry.HourlyRate)
+		earnings, _ := parseEuroFromAPI(entry.Earnings)
+
+		overview.Entries = append(overview.Entries, db.EarningsEntry{
+			Date:        entry.Date,
+			ClientName:  entry.ClientName,
+			ClientHours: entry.ClientHours,
+			HourlyRate:  hourlyRate,
+			Earnings:    earnings,
+		})
+	}
+
+	return overview, nil
+}
+
+// CalculateEarningsSummaryForYear calculates earnings summary grouped by client and rate
+func (c *Client) CalculateEarningsSummaryForYear(year int) (db.EarningsOverview, error) {
+	endpoint := fmt.Sprintf("/api/earnings?year=%d&summary=true", year)
+	data, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return db.EarningsOverview{}, err
+	}
+
+	// Same parsing logic as CalculateEarningsForYear
+	var response struct {
+		Year          int    `json:"year"`
+		Month         int    `json:"month"`
+		TotalHours    int    `json:"total_hours"`
+		TotalEarnings string `json:"total_earnings"`
+		Entries       []struct {
+			Date        string `json:"date"`
+			ClientName  string `json:"client_name"`
+			ClientHours int    `json:"client_hours"`
+			HourlyRate  string `json:"hourly_rate"`
+			Earnings    string `json:"earnings"`
+		} `json:"entries"`
+	}
+
+	if err := json.Unmarshal(data, &response); err != nil {
+		return db.EarningsOverview{}, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	// Convert back to EarningsOverview with parsed Euro values
+	overview := db.EarningsOverview{
+		Year:       response.Year,
+		Month:      response.Month,
+		TotalHours: response.TotalHours,
+	}
+
+	// Parse total earnings
+	totalEarnings, _ := parseEuroFromAPI(response.TotalEarnings)
+	overview.TotalEarnings = totalEarnings
+
+	// Parse entries
+	for _, entry := range response.Entries {
+		hourlyRate, _ := parseEuroFromAPI(entry.HourlyRate)
+		earnings, _ := parseEuroFromAPI(entry.Earnings)
+
+		overview.Entries = append(overview.Entries, db.EarningsEntry{
+			Date:        entry.Date,
+			ClientName:  entry.ClientName,
+			ClientHours: entry.ClientHours,
+			HourlyRate:  hourlyRate,
+			Earnings:    earnings,
+		})
+	}
+
+	return overview, nil
+}
+
+// CalculateEarningsForMonth calculates total earnings for a specific month
+func (c *Client) CalculateEarningsForMonth(year int, month int) (db.EarningsOverview, error) {
+	endpoint := fmt.Sprintf("/api/earnings?year=%d&month=%d", year, month)
+	data, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return db.EarningsOverview{}, err
+	}
+
+	// Same parsing logic as CalculateEarningsForYear
+	var response struct {
+		Year         int    `json:"year"`
+		Month        int    `json:"month"`
+		TotalHours   int    `json:"total_hours"`
+		TotalEarnings string `json:"total_earnings"`
+		Entries      []struct {
+			Date        string `json:"date"`
+			ClientName  string `json:"client_name"`
+			ClientHours int    `json:"client_hours"`
+			HourlyRate  string `json:"hourly_rate"`
+			Earnings    string `json:"earnings"`
+		} `json:"entries"`
+	}
+
+	if err := json.Unmarshal(data, &response); err != nil {
+		return db.EarningsOverview{}, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	overview := db.EarningsOverview{
+		Year:       response.Year,
+		Month:      response.Month,
+		TotalHours: response.TotalHours,
+	}
+
+	totalEarnings, _ := parseEuroFromAPI(response.TotalEarnings)
+	overview.TotalEarnings = totalEarnings
+
+	for _, entry := range response.Entries {
+		hourlyRate, _ := parseEuroFromAPI(entry.HourlyRate)
+		earnings, _ := parseEuroFromAPI(entry.Earnings)
+
+		overview.Entries = append(overview.Entries, db.EarningsEntry{
+			Date:        entry.Date,
+			ClientName:  entry.ClientName,
+			ClientHours: entry.ClientHours,
+			HourlyRate:  hourlyRate,
+			Earnings:    earnings,
+		})
+	}
+
+	return overview, nil
+}
+
+// GetClientWithRates retrieves a client along with all their rate history
+func (c *Client) GetClientWithRates(clientId int) (db.ClientWithRates, error) {
+	client, err := c.GetClientById(clientId)
+	if err != nil {
+		return db.ClientWithRates{}, err
+	}
+
+	rates, err := c.GetClientRates(clientId)
+	if err != nil {
+		return db.ClientWithRates{}, err
+	}
+
+	return db.ClientWithRates{
+		Client: client,
+		Rates:  rates,
+	}, nil
+}
+
+// parseEuroFromAPI parses a Euro string from the API (e.g., "€100,50") to float64
+func parseEuroFromAPI(euroStr string) (float64, error) {
+	// We can just use the existing ParseEuro function from utils
+	// But since we're in the api package and want to avoid circular imports,
+	// we'll implement a simple version here
+
+	// Remove € symbol (works with UTF-8)
+	cleanStr := strings.TrimSpace(euroStr)
+	cleanStr = strings.TrimPrefix(cleanStr, "€")
+	cleanStr = strings.TrimSpace(cleanStr)
+
+	// Replace comma with dot
+	cleanStr = strings.Replace(cleanStr, ",", ".", 1)
+
+	var value float64
+	_, err := fmt.Sscanf(cleanStr, "%f", &value)
+	return value, err
 }
 
 // Ping checks if the API is accessible

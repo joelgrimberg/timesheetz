@@ -83,3 +83,85 @@ func (a *ClientAdapter) Ping() error {
 	return a.client.Ping()
 }
 
+// Client operations
+
+func (a *ClientAdapter) GetAllClients() ([]db.Client, error) {
+	return a.client.GetAllClients()
+}
+
+func (a *ClientAdapter) GetActiveClients() ([]db.Client, error) {
+	return a.client.GetActiveClients()
+}
+
+func (a *ClientAdapter) GetClientById(id int) (db.Client, error) {
+	return a.client.GetClientById(id)
+}
+
+func (a *ClientAdapter) GetClientByName(name string) (db.Client, error) {
+	return a.client.GetClientByName(name)
+}
+
+func (a *ClientAdapter) AddClient(client db.Client) (int, error) {
+	return a.client.AddClient(client)
+}
+
+func (a *ClientAdapter) UpdateClient(client db.Client) error {
+	return a.client.UpdateClient(client)
+}
+
+func (a *ClientAdapter) DeleteClient(id int) error {
+	return a.client.DeleteClient(id)
+}
+
+func (a *ClientAdapter) DeactivateClient(id int) error {
+	return a.client.DeactivateClient(id)
+}
+
+// Client rate operations
+
+func (a *ClientAdapter) GetClientRates(clientId int) ([]db.ClientRate, error) {
+	return a.client.GetClientRates(clientId)
+}
+
+func (a *ClientAdapter) GetClientRateById(id int) (db.ClientRate, error) {
+	return a.client.GetClientRateById(id)
+}
+
+func (a *ClientAdapter) AddClientRate(rate db.ClientRate) error {
+	return a.client.AddClientRate(rate)
+}
+
+func (a *ClientAdapter) UpdateClientRate(rate db.ClientRate) error {
+	return a.client.UpdateClientRate(rate)
+}
+
+func (a *ClientAdapter) DeleteClientRate(id int) error {
+	return a.client.DeleteClientRate(id)
+}
+
+func (a *ClientAdapter) GetClientRateForDate(clientId int, date string) (db.ClientRate, error) {
+	return a.client.GetClientRateForDate(clientId, date)
+}
+
+func (a *ClientAdapter) GetClientRateByName(clientName string, date string) (float64, error) {
+	return a.client.GetClientRateByName(clientName, date)
+}
+
+// Earnings operations
+
+func (a *ClientAdapter) CalculateEarningsForYear(year int) (db.EarningsOverview, error) {
+	return a.client.CalculateEarningsForYear(year)
+}
+
+func (a *ClientAdapter) CalculateEarningsSummaryForYear(year int) (db.EarningsOverview, error) {
+	return a.client.CalculateEarningsSummaryForYear(year)
+}
+
+func (a *ClientAdapter) CalculateEarningsForMonth(year int, month int) (db.EarningsOverview, error) {
+	return a.client.CalculateEarningsForMonth(year, month)
+}
+
+func (a *ClientAdapter) GetClientWithRates(clientId int) (db.ClientWithRates, error) {
+	return a.client.GetClientWithRates(clientId)
+}
+

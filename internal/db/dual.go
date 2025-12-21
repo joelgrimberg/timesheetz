@@ -499,3 +499,461 @@ func (d *DualLayer) Ping() error {
 	return nil
 }
 
+// compareClients compares two slices of clients
+func (d *DualLayer) compareClients(local, remote []Client, operation string) {
+	if len(local) != len(remote) {
+		logging.Log("DUAL MODE: %s - Client count mismatch: local=%d, remote=%d", operation, len(local), len(remote))
+		return
+	}
+
+	for i := range local {
+		if !reflect.DeepEqual(local[i], remote[i]) {
+			logging.Log("DUAL MODE: %s - Client mismatch at index %d: local=%+v, remote=%+v", operation, i, local[i], remote[i])
+		}
+	}
+}
+
+// compareClientRates compares two slices of client rates
+func (d *DualLayer) compareClientRates(local, remote []ClientRate, operation string) {
+	if len(local) != len(remote) {
+		logging.Log("DUAL MODE: %s - Client rate count mismatch: local=%d, remote=%d", operation, len(local), len(remote))
+		return
+	}
+
+	for i := range local {
+		if !reflect.DeepEqual(local[i], remote[i]) {
+			logging.Log("DUAL MODE: %s - Client rate mismatch at index %d: local=%+v, remote=%+v", operation, i, local[i], remote[i])
+		}
+	}
+}
+
+// Client Operations
+
+func (d *DualLayer) GetAllClients() ([]Client, error) {
+	localClients, localErr := d.local.GetAllClients()
+	remoteClients, remoteErr := d.remote.GetAllClients()
+
+	if localErr == nil && remoteErr == nil {
+		d.compareClients(localClients, remoteClients, "GetAllClients")
+		return localClients, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteClients, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localClients, nil
+	}
+
+	return nil, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) GetActiveClients() ([]Client, error) {
+	localClients, localErr := d.local.GetActiveClients()
+	remoteClients, remoteErr := d.remote.GetActiveClients()
+
+	if localErr == nil && remoteErr == nil {
+		d.compareClients(localClients, remoteClients, "GetActiveClients")
+		return localClients, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteClients, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localClients, nil
+	}
+
+	return nil, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) GetClientById(id int) (Client, error) {
+	localClient, localErr := d.local.GetClientById(id)
+	remoteClient, remoteErr := d.remote.GetClientById(id)
+
+	if localErr == nil && remoteErr == nil {
+		if !reflect.DeepEqual(localClient, remoteClient) {
+			logging.Log("DUAL MODE: GetClientById - Client mismatch for id %d: local=%+v, remote=%+v", id, localClient, remoteClient)
+		}
+		return localClient, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteClient, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localClient, nil
+	}
+
+	return Client{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) GetClientByName(name string) (Client, error) {
+	localClient, localErr := d.local.GetClientByName(name)
+	remoteClient, remoteErr := d.remote.GetClientByName(name)
+
+	if localErr == nil && remoteErr == nil {
+		if !reflect.DeepEqual(localClient, remoteClient) {
+			logging.Log("DUAL MODE: GetClientByName - Client mismatch for name %s: local=%+v, remote=%+v", name, localClient, remoteClient)
+		}
+		return localClient, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteClient, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localClient, nil
+	}
+
+	return Client{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) AddClient(client Client) (int, error) {
+	localId, localErr := d.local.AddClient(client)
+	remoteId, remoteErr := d.remote.AddClient(client)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB write failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API write failed: %v", remoteErr)
+	}
+
+	if localErr != nil && remoteErr != nil {
+		return 0, fmt.Errorf("both local and remote writes failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+
+	// Return local ID if successful, otherwise remote ID
+	if localErr == nil {
+		return localId, nil
+	}
+	return remoteId, remoteErr
+}
+
+func (d *DualLayer) UpdateClient(client Client) error {
+	localErr := d.local.UpdateClient(client)
+	remoteErr := d.remote.UpdateClient(client)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB update failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API update failed: %v", remoteErr)
+	}
+
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote updates failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+
+	if localErr != nil {
+		return fmt.Errorf("local update failed: %w", localErr)
+	}
+	return remoteErr
+}
+
+func (d *DualLayer) DeleteClient(id int) error {
+	localErr := d.local.DeleteClient(id)
+	remoteErr := d.remote.DeleteClient(id)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB delete failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API delete failed: %v", remoteErr)
+	}
+
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote deletes failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+
+	if localErr != nil {
+		return fmt.Errorf("local delete failed: %w", localErr)
+	}
+	return remoteErr
+}
+
+func (d *DualLayer) DeactivateClient(id int) error {
+	localErr := d.local.DeactivateClient(id)
+	remoteErr := d.remote.DeactivateClient(id)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB deactivate failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API deactivate failed: %v", remoteErr)
+	}
+
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote deactivates failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+
+	if localErr != nil {
+		return fmt.Errorf("local deactivate failed: %w", localErr)
+	}
+	return remoteErr
+}
+
+// Client Rate Operations
+
+func (d *DualLayer) GetClientRates(clientId int) ([]ClientRate, error) {
+	localRates, localErr := d.local.GetClientRates(clientId)
+	remoteRates, remoteErr := d.remote.GetClientRates(clientId)
+
+	if localErr == nil && remoteErr == nil {
+		d.compareClientRates(localRates, remoteRates, "GetClientRates")
+		return localRates, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteRates, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localRates, nil
+	}
+
+	return nil, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) GetClientRateById(id int) (ClientRate, error) {
+	localRate, localErr := d.local.GetClientRateById(id)
+	remoteRate, remoteErr := d.remote.GetClientRateById(id)
+
+	if localErr == nil && remoteErr == nil {
+		if !reflect.DeepEqual(localRate, remoteRate) {
+			logging.Log("DUAL MODE: GetClientRateById - Rate mismatch for id %d: local=%+v, remote=%+v", id, localRate, remoteRate)
+		}
+		return localRate, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteRate, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localRate, nil
+	}
+
+	return ClientRate{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) AddClientRate(rate ClientRate) error {
+	localErr := d.local.AddClientRate(rate)
+	remoteErr := d.remote.AddClientRate(rate)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB write failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API write failed: %v", remoteErr)
+	}
+
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote writes failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+
+	if localErr != nil {
+		return fmt.Errorf("local write failed: %w", localErr)
+	}
+	return remoteErr
+}
+
+func (d *DualLayer) UpdateClientRate(rate ClientRate) error {
+	localErr := d.local.UpdateClientRate(rate)
+	remoteErr := d.remote.UpdateClientRate(rate)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB update failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API update failed: %v", remoteErr)
+	}
+
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote updates failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+
+	if localErr != nil {
+		return fmt.Errorf("local update failed: %w", localErr)
+	}
+	return remoteErr
+}
+
+func (d *DualLayer) DeleteClientRate(id int) error {
+	localErr := d.local.DeleteClientRate(id)
+	remoteErr := d.remote.DeleteClientRate(id)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB delete failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API delete failed: %v", remoteErr)
+	}
+
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote deletes failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+
+	if localErr != nil {
+		return fmt.Errorf("local delete failed: %w", localErr)
+	}
+	return remoteErr
+}
+
+func (d *DualLayer) GetClientRateForDate(clientId int, date string) (ClientRate, error) {
+	localRate, localErr := d.local.GetClientRateForDate(clientId, date)
+	remoteRate, remoteErr := d.remote.GetClientRateForDate(clientId, date)
+
+	if localErr == nil && remoteErr == nil {
+		if !reflect.DeepEqual(localRate, remoteRate) {
+			logging.Log("DUAL MODE: GetClientRateForDate - Rate mismatch for client %d on %s: local=%+v, remote=%+v", clientId, date, localRate, remoteRate)
+		}
+		return localRate, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteRate, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localRate, nil
+	}
+
+	return ClientRate{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) GetClientRateByName(clientName string, date string) (float64, error) {
+	localRate, localErr := d.local.GetClientRateByName(clientName, date)
+	remoteRate, remoteErr := d.remote.GetClientRateByName(clientName, date)
+
+	if localErr == nil && remoteErr == nil {
+		if localRate != remoteRate {
+			logging.Log("DUAL MODE: GetClientRateByName - Rate mismatch for %s on %s: local=%.2f, remote=%.2f", clientName, date, localRate, remoteRate)
+		}
+		return localRate, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteRate, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localRate, nil
+	}
+
+	return 0.0, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+// Earnings Operations
+
+func (d *DualLayer) CalculateEarningsForYear(year int) (EarningsOverview, error) {
+	localEarnings, localErr := d.local.CalculateEarningsForYear(year)
+	remoteEarnings, remoteErr := d.remote.CalculateEarningsForYear(year)
+
+	if localErr == nil && remoteErr == nil {
+		// Compare totals
+		if localEarnings.TotalHours != remoteEarnings.TotalHours || localEarnings.TotalEarnings != remoteEarnings.TotalEarnings {
+			logging.Log("DUAL MODE: CalculateEarningsForYear - Earnings mismatch for year %d: local(hours=%d, earnings=%.2f), remote(hours=%d, earnings=%.2f)",
+				year, localEarnings.TotalHours, localEarnings.TotalEarnings, remoteEarnings.TotalHours, remoteEarnings.TotalEarnings)
+		}
+		return localEarnings, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteEarnings, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localEarnings, nil
+	}
+
+	return EarningsOverview{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) CalculateEarningsSummaryForYear(year int) (EarningsOverview, error) {
+	localEarnings, localErr := d.local.CalculateEarningsSummaryForYear(year)
+	remoteEarnings, remoteErr := d.remote.CalculateEarningsSummaryForYear(year)
+
+	if localErr == nil && remoteErr == nil {
+		// Compare totals
+		if localEarnings.TotalHours != remoteEarnings.TotalHours || localEarnings.TotalEarnings != remoteEarnings.TotalEarnings {
+			logging.Log("DUAL MODE: CalculateEarningsSummaryForYear - Earnings mismatch for year %d: local(hours=%d, earnings=%.2f), remote(hours=%d, earnings=%.2f)",
+				year, localEarnings.TotalHours, localEarnings.TotalEarnings, remoteEarnings.TotalHours, remoteEarnings.TotalEarnings)
+		}
+		return localEarnings, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteEarnings, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localEarnings, nil
+	}
+
+	return EarningsOverview{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) CalculateEarningsForMonth(year int, month int) (EarningsOverview, error) {
+	localEarnings, localErr := d.local.CalculateEarningsForMonth(year, month)
+	remoteEarnings, remoteErr := d.remote.CalculateEarningsForMonth(year, month)
+
+	if localErr == nil && remoteErr == nil {
+		// Compare totals
+		if localEarnings.TotalHours != remoteEarnings.TotalHours || localEarnings.TotalEarnings != remoteEarnings.TotalEarnings {
+			logging.Log("DUAL MODE: CalculateEarningsForMonth - Earnings mismatch for %d/%d: local(hours=%d, earnings=%.2f), remote(hours=%d, earnings=%.2f)",
+				year, month, localEarnings.TotalHours, localEarnings.TotalEarnings, remoteEarnings.TotalHours, remoteEarnings.TotalEarnings)
+		}
+		return localEarnings, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteEarnings, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localEarnings, nil
+	}
+
+	return EarningsOverview{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) GetClientWithRates(clientId int) (ClientWithRates, error) {
+	localData, localErr := d.local.GetClientWithRates(clientId)
+	remoteData, remoteErr := d.remote.GetClientWithRates(clientId)
+
+	if localErr == nil && remoteErr == nil {
+		if !reflect.DeepEqual(localData, remoteData) {
+			logging.Log("DUAL MODE: GetClientWithRates - Data mismatch for client %d", clientId)
+		}
+		return localData, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteData, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localData, nil
+	}
+
+	return ClientWithRates{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+

@@ -29,6 +29,31 @@ type DataLayer interface {
 	GetTrainingBudgetEntry(id int) (TrainingBudgetEntry, error)
 	GetTrainingBudgetEntryByDate(date string) (TrainingBudgetEntry, error)
 
+	// Client operations
+	GetAllClients() ([]Client, error)
+	GetActiveClients() ([]Client, error)
+	GetClientById(id int) (Client, error)
+	GetClientByName(name string) (Client, error)
+	AddClient(client Client) (int, error)
+	UpdateClient(client Client) error
+	DeleteClient(id int) error
+	DeactivateClient(id int) error
+
+	// Client rate operations
+	GetClientRates(clientId int) ([]ClientRate, error)
+	GetClientRateById(id int) (ClientRate, error)
+	AddClientRate(rate ClientRate) error
+	UpdateClientRate(rate ClientRate) error
+	DeleteClientRate(id int) error
+	GetClientRateForDate(clientId int, date string) (ClientRate, error)
+	GetClientRateByName(clientName string, date string) (float64, error)
+
+	// Earnings operations
+	CalculateEarningsForYear(year int) (EarningsOverview, error)
+	CalculateEarningsSummaryForYear(year int) (EarningsOverview, error)
+	CalculateEarningsForMonth(year int, month int) (EarningsOverview, error)
+	GetClientWithRates(clientId int) (ClientWithRates, error)
+
 	// Health check
 	Ping() error
 }
@@ -102,5 +127,87 @@ func (l *LocalDBLayer) GetTrainingBudgetEntryByDate(date string) (TrainingBudget
 
 func (l *LocalDBLayer) Ping() error {
 	return Ping()
+}
+
+// Client operations
+
+func (l *LocalDBLayer) GetAllClients() ([]Client, error) {
+	return GetAllClients()
+}
+
+func (l *LocalDBLayer) GetActiveClients() ([]Client, error) {
+	return GetActiveClients()
+}
+
+func (l *LocalDBLayer) GetClientById(id int) (Client, error) {
+	return GetClientById(id)
+}
+
+func (l *LocalDBLayer) GetClientByName(name string) (Client, error) {
+	return GetClientByName(name)
+}
+
+func (l *LocalDBLayer) AddClient(client Client) (int, error) {
+	return AddClient(client)
+}
+
+func (l *LocalDBLayer) UpdateClient(client Client) error {
+	return UpdateClient(client)
+}
+
+func (l *LocalDBLayer) DeleteClient(id int) error {
+	return DeleteClient(id)
+}
+
+func (l *LocalDBLayer) DeactivateClient(id int) error {
+	return DeactivateClient(id)
+}
+
+// Client rate operations
+
+func (l *LocalDBLayer) GetClientRates(clientId int) ([]ClientRate, error) {
+	return GetClientRates(clientId)
+}
+
+func (l *LocalDBLayer) GetClientRateById(id int) (ClientRate, error) {
+	return GetClientRateById(id)
+}
+
+func (l *LocalDBLayer) AddClientRate(rate ClientRate) error {
+	return AddClientRate(rate)
+}
+
+func (l *LocalDBLayer) UpdateClientRate(rate ClientRate) error {
+	return UpdateClientRate(rate)
+}
+
+func (l *LocalDBLayer) DeleteClientRate(id int) error {
+	return DeleteClientRate(id)
+}
+
+func (l *LocalDBLayer) GetClientRateForDate(clientId int, date string) (ClientRate, error) {
+	return GetClientRateForDate(clientId, date)
+}
+
+func (l *LocalDBLayer) GetClientRateByName(clientName string, date string) (float64, error) {
+	return GetClientRateByName(clientName, date)
+}
+
+// Earnings operations
+
+func (l *LocalDBLayer) CalculateEarningsForYear(year int) (EarningsOverview, error) {
+	return CalculateEarningsForYear(year)
+}
+
+func (l *LocalDBLayer) CalculateEarningsSummaryForYear(year int) (EarningsOverview, error) {
+	return CalculateEarningsSummaryForYear(year)
+}
+
+func (l *LocalDBLayer) CalculateEarningsForMonth(year int, month int) (EarningsOverview, error) {
+	return CalculateEarningsForMonth(year, month)
+}
+
+func (l *LocalDBLayer) GetClientWithRates(clientId int) (ClientWithRates, error) {
+	return GetClientWithRates(clientId)
 }
 
