@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 	"timesheet/api/handler"
@@ -201,15 +202,31 @@ func main() {
 
 	// Start API server if not in tui-only mode or add mode
 	if !flags.tuiOnly && !flags.add && config.GetStartAPIServer() {
-		// Start API server in a goroutine before running the UI
-		go func() {
-			log.Println("Starting API server...")
-			handler.StartServer(p, refreshChan)
-		}()
+		// Check if API is already running on the configured port
+		port := config.GetAPIPort()
+		apiRunning := false
 
-		// Give the API server a moment to start
-		time.Sleep(100 * time.Millisecond)
-		log.Println("API server started")
+		// Try to connect to the API to check if it's already running
+		client := &http.Client{Timeout: 1 * time.Second}
+		resp, err := client.Get(fmt.Sprintf("http://localhost:%d/health", port))
+		if err == nil {
+			resp.Body.Close()
+			apiRunning = true
+			log.Printf("API server already running on port %d, skipping startup", port)
+		}
+
+		// Only start API server if it's not already running
+		if !apiRunning {
+			// Start API server in a goroutine before running the UI
+			go func() {
+				log.Println("Starting API server...")
+				handler.StartServer(p, refreshChan)
+			}()
+
+			// Give the API server a moment to start
+			time.Sleep(100 * time.Millisecond)
+			log.Println("API server started")
+		}
 	}
 
 	// Start a goroutine to handle refresh messages
