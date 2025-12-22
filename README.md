@@ -27,6 +27,61 @@ The application stores all entries in a Sqlite database and features:
 
 ## Installation
 
+### Homebrew (macOS - Recommended)
+
+The easiest way to install Timesheetz on macOS is via Homebrew:
+
+```bash
+# Add the tap
+brew tap joelgrimberg/timesheetz https://github.com/joelgrimberg/timesheetz
+
+# Install
+brew install timesheetz
+
+# Start the background service
+launchctl load ~/Library/LaunchAgents/com.timesheetz.plist
+```
+
+The Homebrew installation automatically:
+- Installs the `timesheetz` command
+- Creates a Launch Agent for auto-start on login
+- Sets up logging to `~/Library/Logs/timesheetz.{out,err}`
+
+**Managing the Service:**
+
+```bash
+# Check if running
+launchctl list | grep timesheetz
+
+# Stop the service
+launchctl unload ~/Library/LaunchAgents/com.timesheetz.plist
+
+# Start the service
+launchctl load ~/Library/LaunchAgents/com.timesheetz.plist
+
+# Restart (after updates)
+launchctl unload ~/Library/LaunchAgents/com.timesheetz.plist
+launchctl load ~/Library/LaunchAgents/com.timesheetz.plist
+
+# View logs
+tail -f ~/Library/Logs/timesheetz.out  # stdout
+tail -f ~/Library/Logs/timesheetz.err  # stderr
+
+# Or use the helper script
+./scripts/brew-manage.sh status
+./scripts/brew-manage.sh restart
+./scripts/brew-manage.sh logs
+```
+
+**Updating:**
+
+```bash
+brew upgrade timesheetz
+# Then restart the service
+launchctl unload ~/Library/LaunchAgents/com.timesheetz.plist
+launchctl load ~/Library/LaunchAgents/com.timesheetz.plist
+```
+
 ### Quick Install
 
 1. Download the latest release from the [releases page](https://github.com/joelgrimberg/timesheetz/releases)

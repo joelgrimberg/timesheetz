@@ -59,3 +59,4 @@ timesheetz.err
 # Build artifacts
 build/
 bin/
+dist/

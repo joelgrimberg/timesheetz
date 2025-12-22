@@ -1,9 +1,12 @@
+version: 2
+
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - env:
+  - id: default
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
@@ -20,13 +23,15 @@ builds:
     dir: .
 
 archives:
-  - format: tar.gz
+  - id: default
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
+    builds:
+      - default
     format_overrides:
       - goos: windows
         format: zip
@@ -47,10 +52,108 @@ changelog:
       - Merge branch
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 release:
   github:
     owner: joelgrimberg
     name: timesheetz
-  prerelease: auto 
+  prerelease: auto
+
+brews:
+  -
+    name: timesheetz
+    repository:
+      owner: joelgrimberg
+      name: timesheetz
+      branch: main
+    directory: HomebrewFormula
+    homepage: "https://github.com/joelgrimberg/timesheetz"
+    description: "Timesheet management with TUI and REST API - write hours like a unicorn"
+    license: "MIT"
+
+    install: |
+      bin.install "timesheet" => "timesheetz"
+
+    post_install: |
+      # Create config directory
+      config_dir = "#{ENV['HOME']}/.config/timesheetz"
+      system "mkdir", "-p", config_dir
+
+      # Create launch agents directory
+      launch_agents_dir = "#{ENV['HOME']}/Library/LaunchAgents"
+      system "mkdir", "-p", launch_agents_dir
+
+      # Create the launch agent plist
+      plist_path = "#{launch_agents_dir}/com.timesheetz.plist"
+
+      plist_content = <<~EOS
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>Label</key>
+            <string>com.timesheetz</string>
+            <key>ProgramArguments</key>
+            <array>
+                <string>#{bin}/timesheetz</string>
+                <string>--no-tui</string>
+            </array>
+            <key>RunAtLoad</key>
+            <true/>
+            <key>KeepAlive</key>
+            <true/>
+            <key>StandardOutPath</key>
+            <string>#{ENV['HOME']}/Library/Logs/timesheetz.out</string>
+            <key>StandardErrorPath</key>
+            <string>#{ENV['HOME']}/Library/Logs/timesheetz.err</string>
+            <key>EnvironmentVariables</key>
+            <dict>
+                <key>PATH</key>
+                <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+                <key>HOME</key>
+                <string>#{ENV['HOME']}</string>
+            </dict>
+        </dict>
+        </plist>
+      EOS
+
+      File.write(plist_path, plist_content)
+      system "chmod", "644", plist_path
+
+      # Create logs directory
+      system "mkdir", "-p", "#{ENV['HOME']}/Library/Logs"
+
+      ohai "Timesheetz installed successfully!"
+      ohai "To start the Launch Agent now, run:"
+      ohai "  launchctl load ~/Library/LaunchAgents/com.timesheetz.plist"
+      ohai ""
+      ohai "The Launch Agent will start automatically on next login."
+
+    caveats: |
+      Timesheetz has been installed!
+
+      The Launch Agent has been created at:
+        ~/Library/LaunchAgents/com.timesheetz.plist
+
+      To start Timesheetz now:
+        launchctl load ~/Library/LaunchAgents/com.timesheetz.plist
+
+      To check if it's running:
+        launchctl list | grep timesheetz
+
+      View logs at:
+        ~/Library/Logs/timesheetz.out
+        ~/Library/Logs/timesheetz.err
+
+      Run the TUI:
+        timesheetz
+
+      Development mode:
+        timesheetz --dev
+
+      For help:
+        timesheetz --help
+
+    test: |
+      system "#{bin}/timesheetz --version" 
