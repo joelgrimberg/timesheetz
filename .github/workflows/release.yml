@@ -24,16 +24,11 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Make build script executable
-        run: chmod +x scripts/build.sh
-
-      - name: Build
-        run: ./scripts/build.sh
-
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
+          distribution: goreleaser
+          version: '~> v2'
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
