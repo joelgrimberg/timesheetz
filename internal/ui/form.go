@@ -3,12 +3,14 @@ package ui
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 	"timesheet/internal/datalayer"
 	"timesheet/internal/db"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Form field constants
@@ -32,12 +34,14 @@ type errMsg error
 
 // FormModel for timesheet entry
 type FormModel struct {
-	inputs          []textinput.Model
-	focused         int
-	error           string
-	success         string
-	isEditing       bool
-	quitAfterSubmit bool
+	inputs            []textinput.Model
+	focused           int
+	error             string
+	success           string
+	isEditing         bool
+	quitAfterSubmit   bool
+	activeClients     []db.Client
+	currentSuggestion string
 }
 
 // Create a new form with initial values
@@ -76,11 +80,20 @@ func InitialFormModelWithDate(date string) FormModel {
 		inputs = append(inputs, i)
 	}
 
+	// Load active clients for autocomplete
+	dataLayer := datalayer.GetDataLayer()
+	activeClients, err := dataLayer.GetActiveClients()
+	if err != nil {
+		activeClients = []db.Client{} // Empty list on error
+	}
+
 	return FormModel{
-		inputs:          inputs,
-		focused:         0,
-		isEditing:       false,
-		quitAfterSubmit: false,
+		inputs:            inputs,
+		focused:           0,
+		isEditing:         false,
+		quitAfterSubmit:   false,
+		activeClients:     activeClients,
+		currentSuggestion: "",
 	}
 }
 
@@ -127,7 +140,17 @@ func (m FormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Submit the form when Enter is pressed on any field
 			return m, m.handleSubmit()
 
-		case tea.KeyTab, tea.KeyShiftTab, tea.KeyUp, tea.KeyDown:
+		case tea.KeyTab:
+			// If in client field with a suggestion, autocomplete it
+			if m.focused == clientField && m.currentSuggestion != "" {
+				m.inputs[clientField].SetValue(m.currentSuggestion)
+				m.currentSuggestion = ""
+				return m, nil
+			}
+			// Otherwise, handle as normal navigation (continue below)
+			fallthrough
+
+		case tea.KeyShiftTab, tea.KeyUp, tea.KeyDown:
 			// If leaving the date field, check if entry exists for that date
 			if m.focused == dateField {
 				date := m.inputs[dateField].Value()
@@ -184,6 +207,11 @@ func (m *FormModel) updateInputs(msg tea.Msg) tea.Cmd {
 	// Only update the focused input
 	m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
 
+	// Update autocomplete suggestion if we're in the client field
+	if m.focused == clientField {
+		m.updateAutocompleteSuggestion()
+	}
+
 	return cmd
 }
 
@@ -200,7 +228,25 @@ func (m FormModel) View() string {
 	// Render input fields
 	for i, input := range m.inputs {
 		s += inputStyle.Render(fieldLabel(i)) + "\n"
-		s += input.View() + "\n\n"
+
+		// Special handling for client field with autocomplete suggestion
+		if i == clientField && m.focused == clientField && m.currentSuggestion != "" {
+			typedText := m.inputs[clientField].Value()
+			suggestionRemaining := m.currentSuggestion[len(typedText):]
+
+			// Manually construct the view with inline suggestion
+			greyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+			// Render: prompt + typed text + cursor + grey suggestion
+			prompt := input.PromptStyle.Render("> ")
+			styledTypedText := input.TextStyle.Render(typedText)
+			cursor := input.Cursor.View()
+			greySuggestion := greyStyle.Render(suggestionRemaining)
+
+			s += prompt + styledTypedText + cursor + greySuggestion + "\n\n"
+		} else {
+			s += input.View() + "\n\n"
+		}
 	}
 
 	// Show validation errors or success messages
@@ -357,4 +403,30 @@ func parseHours(input string) (int, error) {
 	}
 
 	return hours, nil
+}
+
+// updateAutocompleteSuggestion finds and updates the autocomplete suggestion
+func (m *FormModel) updateAutocompleteSuggestion() {
+	typedText := m.inputs[clientField].Value()
+
+	// Clear suggestion if nothing is typed
+	if typedText == "" {
+		m.currentSuggestion = ""
+		return
+	}
+
+	// Find first matching client (case-insensitive)
+	typedLower := strings.ToLower(typedText)
+
+	for _, client := range m.activeClients {
+		clientNameLower := strings.ToLower(client.Name)
+		if strings.HasPrefix(clientNameLower, typedLower) {
+			// Found a match - store the full client name as suggestion
+			m.currentSuggestion = client.Name
+			return
+		}
+	}
+
+	// No match found
+	m.currentSuggestion = ""
 }
