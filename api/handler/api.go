@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 	"timesheet/api/middleware"
 	"timesheet/internal/config"
@@ -77,11 +78,20 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 	gin.SetMode(gin.ReleaseMode)
 
 	// Create a custom logger that writes to a file instead of stdout
-	logFile, err := os.OpenFile("gin.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	// Use the same log directory as the main application
+	homeDir, _ := os.UserHomeDir()
+	logDir := filepath.Join(homeDir, ".local", "state", "timesheetz", "logs")
+	os.MkdirAll(logDir, 0755) // Ensure directory exists
+
+	ginLogPath := filepath.Join(logDir, "gin.log")
+	logFile, err := os.OpenFile(ginLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatalf("Failed to open gin log file: %v", err)
+		// Fall back to stderr instead of crashing
+		log.Printf("Warning: Failed to open gin log file at %s: %v, using stderr", ginLogPath, err)
+		logFile = os.Stderr
+	} else {
+		defer logFile.Close()
 	}
-	defer logFile.Close()
 
 	// Create a custom logger for Gin
 	ginLogger := gin.LoggerWithConfig(gin.LoggerConfig{
