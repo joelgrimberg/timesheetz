@@ -5,13 +5,23 @@ before:
     - go mod tidy
 
 builds:
-  - id: default
+  - id: darwin
     env:
       - CGO_ENABLED=1
     goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/timesheet
+    binary: timesheet
+    dir: .
+  - id: others
+    env:
+      - CGO_ENABLED=0
+    goos:
       - linux
       - windows
-      - darwin
     goarch:
       - amd64
       - arm64
@@ -31,7 +41,8 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
     builds:
-      - default
+      - darwin
+      - others
     format_overrides:
       - goos: windows
         format: zip
