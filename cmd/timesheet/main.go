@@ -84,7 +84,6 @@ func setupFlags() flags {
 func main() {
 	// Setup and parse flags
 	flags := setupFlags()
-	log.Println("Flags parsed successfully")
 
 	// Show help and exit if --help is used
 	if flags.help {
