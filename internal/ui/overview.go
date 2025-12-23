@@ -80,12 +80,12 @@ func (k OverviewKeyMap) FullHelp() [][]key.Binding {
 
 // OverviewModel represents the overview view
 type OverviewModel struct {
-	trainingDaysLeft float64
-	vacationDaysLeft float64
-	currentYear      int
-	keys             OverviewKeyMap
-	help             help.Model
-	showHelp         bool
+	trainingHoursLeft int
+	vacationHoursLeft int
+	currentYear       int
+	keys              OverviewKeyMap
+	help              help.Model
+	showHelp          bool
 }
 
 // ChangeOverviewYearMsg is used to change the year
@@ -108,16 +108,16 @@ func InitialOverviewModel() OverviewModel {
 	configFile, err := config.GetConfig()
 	if err != nil {
 		return OverviewModel{
-			trainingDaysLeft: 0,
-			vacationDaysLeft: 0,
-			currentYear:      currentYear,
-			keys:             DefaultOverviewKeyMap(),
-			help:             help.New(),
-			showHelp:         false,
+			trainingHoursLeft: 0,
+			vacationHoursLeft: 0,
+			currentYear:       currentYear,
+			keys:              DefaultOverviewKeyMap(),
+			help:              help.New(),
+			showHelp:          false,
 		}
 	}
 
-	// Calculate training days left
+	// Calculate training hours left
 	dataLayer := datalayer.GetDataLayer()
 	trainingEntries, err := dataLayer.GetTrainingEntriesForYear(currentYear)
 	var totalTrainingHours int
@@ -127,24 +127,23 @@ func InitialOverviewModel() OverviewModel {
 		}
 	}
 	trainingHoursLeft := configFile.TrainingHours.YearlyTarget - totalTrainingHours
-	trainingDaysLeft := float64(trainingHoursLeft) / 9.0
 
-	// Calculate vacation days left (includes carryover)
+	// Calculate vacation hours left (includes carryover)
 	vacationSummary, err := dataLayer.GetVacationSummaryForYear(currentYear)
-	var vacationDaysLeft float64
+	var vacationHoursLeft int
 	if err == nil {
-		vacationDaysLeft = float64(vacationSummary.RemainingTotal) / 9.0
+		vacationHoursLeft = vacationSummary.RemainingTotal
 	} else {
-		vacationDaysLeft = 0
+		vacationHoursLeft = 0
 	}
 
 	return OverviewModel{
-		trainingDaysLeft: trainingDaysLeft,
-		vacationDaysLeft: vacationDaysLeft,
-		currentYear:      currentYear,
-		keys:             DefaultOverviewKeyMap(),
-		help:             help.New(),
-		showHelp:         false,
+		trainingHoursLeft: trainingHoursLeft,
+		vacationHoursLeft: vacationHoursLeft,
+		currentYear:       currentYear,
+		keys:              DefaultOverviewKeyMap(),
+		help:              help.New(),
+		showHelp:          false,
 	}
 }
 
@@ -166,7 +165,7 @@ func (m OverviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Calculate training days left
+		// Calculate training hours left
 		dataLayer := datalayer.GetDataLayer()
 		trainingEntries, err := dataLayer.GetTrainingEntriesForYear(msg.Year)
 		var totalTrainingHours int
@@ -176,14 +175,14 @@ func (m OverviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		trainingHoursLeft := configFile.TrainingHours.YearlyTarget - totalTrainingHours
-		m.trainingDaysLeft = float64(trainingHoursLeft) / 9.0
+		m.trainingHoursLeft = trainingHoursLeft
 
-		// Calculate vacation days left (includes carryover)
+		// Calculate vacation hours left (includes carryover)
 		vacationSummary, err := dataLayer.GetVacationSummaryForYear(msg.Year)
 		if err == nil {
-			m.vacationDaysLeft = float64(vacationSummary.RemainingTotal) / 9.0
+			m.vacationHoursLeft = vacationSummary.RemainingTotal
 		} else {
-			m.vacationDaysLeft = 0
+			m.vacationHoursLeft = 0
 		}
 
 		return m, nil
@@ -227,10 +226,10 @@ func (m OverviewModel) View() string {
 			fmt.Sprintf(
 				"%s\n\n%s\n%s\n\n%s\n%s",
 				lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render("Overview "+fmt.Sprintf("%d", m.currentYear)),
-				lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Training Days Left:"),
-				lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("  %.2f days", m.trainingDaysLeft)),
-				lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Vacation Days Left:"),
-				lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("  %.2f days", m.vacationDaysLeft)),
+				lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Training Hours Remaining:"),
+				lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("  %d hours", m.trainingHoursLeft)),
+				lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Vacation Hours Remaining:"),
+				lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("  %d hours", m.vacationHoursLeft)),
 			),
 		)
 
