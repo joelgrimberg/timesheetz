@@ -12,12 +12,11 @@ import (
 	"timesheet/internal/db"
 	"timesheet/internal/logging"
 	"timesheet/internal/ui"
+	"timesheet/internal/version"
 
 	tea "github.com/charmbracelet/bubbletea"
 	_ "github.com/go-sql-driver/mysql"
 )
-
-var version = "dev" // will be set at build time
 
 // Command line flags
 type flags struct {
@@ -65,7 +64,7 @@ func setupFlags() flags {
 
 	// Check for version flag
 	if *versionFlag {
-		fmt.Println(version)
+		fmt.Println(version.Version)
 		os.Exit(0)
 	}
 

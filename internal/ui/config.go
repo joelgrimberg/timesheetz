@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"timesheet/internal/config"
+	"timesheet/internal/version"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -152,6 +153,10 @@ func InitialConfigModel() ConfigModel {
 	// Convert config to table rows
 	var rows []table.Row
 
+	// Version Information
+	rows = append(rows, table.Row{"Version", version.Version})
+	rows = append(rows, table.Row{"", ""}) // Empty row for spacing
+
 	// User Information
 	rows = append(rows, table.Row{"User Information", ""})
 	rows = append(rows, table.Row{"  Name", cfg.Name})
@@ -165,7 +170,7 @@ func InitialConfigModel() ConfigModel {
 
 	// API Client Configuration
 	rows = append(rows, table.Row{"API Client", ""})
-	apiModeRowIdx := len(rows) // Store the index of the API Mode row
+	apiModeRowIdx := len(rows) // Store the index of the API Mode row (after "API Client" header)
 	if cfg.APIMode == "" {
 		rows = append(rows, table.Row{"  API Mode", "local (default)"})
 	} else {

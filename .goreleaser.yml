@@ -21,6 +21,8 @@ builds:
     main: ./cmd/timesheet
     binary: timesheet
     dir: .
+    ldflags:
+      - -s -w -X timesheet/internal/version.Version={{.Version}}
 
 archives:
   - id: default
