@@ -389,6 +389,22 @@ func (m VacationModel) View() string {
 		Padding(1, 2).
 		Render(summaryContent)
 
+	// Create remaining tile
+	remainingContent := fmt.Sprintf(
+		"%s\n  %s",
+		lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Remaining:"),
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("%d hours", m.summary.RemainingTotal)),
+	)
+
+	remainingBox := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Render(remainingContent)
+
+	// Place tiles side by side
+	summarySection := lipgloss.JoinHorizontal(lipgloss.Top, summaryBox, "  ", remainingBox)
+
 	return fmt.Sprintf(
 		"%s\n%s\n\n%s\n\n%s%s",
 		titleStyle.Render(fmt.Sprintf("Vacation %d", m.currentYear)),
@@ -396,7 +412,7 @@ func (m VacationModel) View() string {
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("240")).
 			Render(m.table.View()),
-		summaryBox,
+		summarySection,
 		helpStyle.Render("↑/↓: Navigate • <: Prev tab • >: Next tab • q: Quit"),
 		helpView,
 	)

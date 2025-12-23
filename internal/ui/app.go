@@ -320,6 +320,22 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case TrainingMode:
+		// Check for navigation message
+		if navMsg, ok := msg.(NavigateToTimesheetMsg); ok {
+			// Parse the date to extract year and month
+			date, err := time.Parse("2006-01-02", navMsg.Date)
+			if err == nil {
+				// Switch to timesheet mode
+				m.ActiveMode = TimesheetMode
+
+				// Initialize timesheet with the specific date selected
+				m.TimesheetModel = InitialTimesheetModel()
+
+				// Send command to change to that month and select the date
+				return m, ChangeMonth(date.Year(), date.Month(), navMsg.Date)
+			}
+		}
+
 		// Update training model
 		trainingModel, cmd := m.TrainingModel.Update(msg)
 		m.TrainingModel = trainingModel.(TrainingModel)

@@ -20,6 +20,7 @@ type TrainingKeyMap struct {
 	Down    key.Binding
 	Left    key.Binding
 	Right   key.Binding
+	Enter   key.Binding
 	HelpKey key.Binding
 	Quit    key.Binding
 	PrevTab key.Binding
@@ -44,6 +45,10 @@ func DefaultTrainingKeyMap() TrainingKeyMap {
 		Right: key.NewBinding(
 			key.WithKeys("right", "l"),
 			key.WithHelp("→/l", "next year"),
+		),
+		Enter: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "go to timesheet"),
 		),
 		HelpKey: key.NewBinding(
 			key.WithKeys("?"),
@@ -71,6 +76,7 @@ func (k TrainingKeyMap) ShortHelp() []key.Binding {
 		k.Down,
 		k.Left,
 		k.Right,
+		k.Enter,
 		k.HelpKey,
 		k.Quit,
 	}
@@ -84,6 +90,7 @@ func (k TrainingKeyMap) FullHelp() [][]key.Binding {
 			k.Down,
 			k.Left,
 			k.Right,
+			k.Enter,
 			k.HelpKey,
 			k.Quit,
 		},
@@ -114,6 +121,11 @@ func ChangeTrainingYear(year int) tea.Cmd {
 	return func() tea.Msg {
 		return ChangeTrainingYearMsg{Year: year}
 	}
+}
+
+// NavigateToTimesheetMsg is sent when user wants to navigate to timesheet for a specific date
+type NavigateToTimesheetMsg struct {
+	Date string // YYYY-MM-DD format
 }
 
 // InitialTrainingModel creates a new training model
@@ -272,6 +284,22 @@ func (m TrainingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Right):
 			// Move to next year
 			return m, ChangeTrainingYear(m.currentYear + 1)
+		case key.Matches(msg, m.keys.Enter):
+			// Get the selected row
+			cursorRow := m.table.Cursor()
+			rows := m.table.Rows()
+
+			// Don't navigate if on total row (last row)
+			if cursorRow >= 0 && cursorRow < len(rows)-1 {
+				selectedRow := rows[cursorRow]
+				selectedDate := selectedRow[0] // First column is the date
+
+				// Send navigation message
+				return m, func() tea.Msg {
+					return NavigateToTimesheetMsg{Date: selectedDate}
+				}
+			}
+			return m, nil
 		}
 	}
 
@@ -284,11 +312,11 @@ func (m TrainingModel) View() string {
 	if m.showHelp {
 		helpView = "\n" + lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")).
-			Render("Navigation:\n  ↑/↓, k/j: Move up/down\n  ←/→, h/l: Change year\n  ?: Toggle help\n  q: Quit\n\nTabs:\n  <: Previous tab\n  >: Next tab")
+			Render("Navigation:\n  ↑/↓, k/j: Move up/down\n  ←/→, h/l: Change year\n  enter: Go to timesheet for selected date\n  ?: Toggle help\n  q: Quit\n\nTabs:\n  <: Previous tab\n  >: Next tab")
 	} else {
 		helpView = "\n" + lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")).
-			Render("↑/↓: Navigate • ←/→: Change year • ?: Help • q: Quit • </>: Tabs")
+			Render("↑/↓: Navigate • ←/→: Change year • enter: Go to timesheet • ?: Help • q: Quit • </>: Tabs")
 	}
 
 	return fmt.Sprintf(
@@ -298,7 +326,7 @@ func (m TrainingModel) View() string {
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("240")).
 			Render(m.table.View()),
-		helpStyle.Render("↑/↓: Navigate • <: Prev tab • >: Next tab • q: Quit"),
+		helpStyle.Render("↑/↓: Navigate • enter: Go to timesheet • <: Prev tab • >: Next tab • q: Quit"),
 		helpView,
 	)
 }
