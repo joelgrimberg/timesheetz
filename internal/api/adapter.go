@@ -55,6 +55,22 @@ func (a *ClientAdapter) GetVacationHoursForYear(year int) (int, error) {
 	return a.client.GetVacationHoursForYear(year)
 }
 
+func (a *ClientAdapter) GetVacationCarryoverForYear(year int) (db.VacationCarryover, error) {
+	return a.client.GetVacationCarryoverForYear(year)
+}
+
+func (a *ClientAdapter) SetVacationCarryover(carryover db.VacationCarryover) error {
+	return a.client.SetVacationCarryover(carryover)
+}
+
+func (a *ClientAdapter) DeleteVacationCarryover(year int) error {
+	return a.client.DeleteVacationCarryover(year)
+}
+
+func (a *ClientAdapter) GetVacationSummaryForYear(year int) (db.VacationSummary, error) {
+	return a.client.GetVacationSummaryForYear(year)
+}
+
 func (a *ClientAdapter) GetTrainingBudgetEntriesForYear(year int) ([]db.TrainingBudgetEntry, error) {
 	return a.client.GetTrainingBudgetEntriesForYear(year)
 }

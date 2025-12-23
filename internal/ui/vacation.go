@@ -99,6 +99,7 @@ type VacationModel struct {
 	table        table.Model
 	yearlyTarget int
 	currentYear  int
+	summary      db.VacationSummary
 	keys         VacationKeyMap
 	help         help.Model
 	showHelp     bool
@@ -162,14 +163,30 @@ func InitialVacationModel() VacationModel {
 		Foreground(lipgloss.Color("252"))
 	t.SetStyles(s)
 
-	// Get vacation entries for the current year
+	// Get vacation entries and summary for the current year
 	dataLayer := datalayer.GetDataLayer()
+
+	// Get comprehensive vacation summary (includes carryover)
+	summary, err := dataLayer.GetVacationSummaryForYear(currentYear)
+	if err != nil {
+		return VacationModel{
+			table:        t,
+			yearlyTarget: configFile.VacationHours.YearlyTarget,
+			currentYear:  currentYear,
+			summary:      db.VacationSummary{},
+			keys:         DefaultVacationKeyMap(),
+			help:         help.New(),
+			showHelp:     false,
+		}
+	}
+
 	entries, err := dataLayer.GetVacationEntriesForYear(currentYear)
 	if err != nil {
 		return VacationModel{
 			table:        t,
 			yearlyTarget: configFile.VacationHours.YearlyTarget,
 			currentYear:  currentYear,
+			summary:      summary,
 			keys:         DefaultVacationKeyMap(),
 			help:         help.New(),
 			showHelp:     false,
@@ -178,19 +195,17 @@ func InitialVacationModel() VacationModel {
 
 	// Convert entries to table rows
 	var rows []table.Row
-	var totalHours int
 	for _, entry := range entries {
 		rows = append(rows, table.Row{
 			entry.Date,
 			fmt.Sprintf("%d", entry.Vacation_hours),
 		})
-		totalHours += entry.Vacation_hours
 	}
 
-	// Add total row
+	// Add total row showing used hours and total available
 	rows = append(rows, table.Row{
 		"Total",
-		fmt.Sprintf("%d/%d", totalHours, configFile.VacationHours.YearlyTarget),
+		fmt.Sprintf("%d/%d", summary.UsedHours, summary.TotalAvailable),
 	})
 
 	t.SetRows(rows)
@@ -208,6 +223,7 @@ func InitialVacationModel() VacationModel {
 		table:        t,
 		yearlyTarget: configFile.VacationHours.YearlyTarget,
 		currentYear:  currentYear,
+		summary:      summary,
 		keys:         DefaultVacationKeyMap(),
 		help:         help.New(),
 		showHelp:     false,
@@ -242,27 +258,32 @@ func (m VacationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.yearlyTarget = configFile.VacationHours.YearlyTarget
 		}
 
+		// Get vacation summary for the new year (includes carryover)
+		dataLayer := datalayer.GetDataLayer()
+		summary, err := dataLayer.GetVacationSummaryForYear(msg.Year)
+		if err == nil {
+			m.summary = summary
+		}
+
 		// Get vacation entries for the new year
-		entries, err := db.GetVacationEntriesForYear(msg.Year)
+		entries, err := dataLayer.GetVacationEntriesForYear(msg.Year)
 		if err != nil {
 			return m, tea.Printf("Error: %v", err)
 		}
 
 		// Convert entries to table rows
 		var rows []table.Row
-		var totalHours int
 		for _, entry := range entries {
 			rows = append(rows, table.Row{
 				entry.Date,
 				fmt.Sprintf("%d", entry.Vacation_hours),
 			})
-			totalHours += entry.Vacation_hours
 		}
 
-		// Add total row
+		// Add total row showing used hours and total available
 		rows = append(rows, table.Row{
 			"Total",
-			fmt.Sprintf("%d/%d", totalHours, m.yearlyTarget),
+			fmt.Sprintf("%d/%d", m.summary.UsedHours, m.summary.TotalAvailable),
 		})
 
 		m.table.SetRows(rows)
@@ -340,13 +361,42 @@ func (m VacationModel) View() string {
 			Render("↑/↓: Navigate • ←/→: Change year • ?: Help • q: Quit • </>: Tabs")
 	}
 
+	// Create summary section showing carryover breakdown
+	summaryContent := ""
+	if m.summary.CarryoverHours > 0 {
+		summaryContent = fmt.Sprintf(
+			"%s\n  %s\n  %s\n\n%s\n  %s\n  %s",
+			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Available:"),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Current Year (%d): %d hours", m.currentYear, m.summary.YearlyTarget)),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Carryover from %d: %d hours", m.summary.Year-1, m.summary.CarryoverHours)),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Used:"),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("From Carryover: %d hours", m.summary.UsedFromCarryover)),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("From Current Year: %d hours", m.summary.UsedFromCurrent)),
+		)
+	} else {
+		summaryContent = fmt.Sprintf(
+			"%s\n  %s\n\n%s\n  %s",
+			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Available:"),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Current Year (%d): %d hours", m.currentYear, m.summary.YearlyTarget)),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Used:"),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Total: %d hours", m.summary.UsedHours)),
+		)
+	}
+
+	summaryBox := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Render(summaryContent)
+
 	return fmt.Sprintf(
-		"%s\n%s\n%s%s",
+		"%s\n%s\n\n%s\n\n%s%s",
 		titleStyle.Render(fmt.Sprintf("Vacation %d", m.currentYear)),
 		lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("240")).
 			Render(m.table.View()),
+		summaryBox,
 		helpStyle.Render("↑/↓: Navigate • <: Prev tab • >: Next tab • q: Quit"),
 		helpView,
 	)

@@ -239,29 +239,23 @@ func GetVacationHours(c *gin.Context) {
 		return
 	}
 
-	// Get spent hours from timesheet entries
-	usedHours, err := db.GetVacationHoursForYear(yearInt)
+	// Get comprehensive vacation summary including carryover
+	summary, err := db.GetVacationSummaryForYear(yearInt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Get total hours from config
-	config, err := config.GetConfig()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read configuration"})
-		return
-	}
-
-	totalHours := config.VacationHours.YearlyTarget
-	availableHours := totalHours - usedHours
-
-	// Return all hours information
+	// Return enhanced hours information with carryover breakdown
 	c.JSON(http.StatusOK, gin.H{
-		"year":            yearInt,
-		"total_hours":     totalHours,
-		"used_hours":      usedHours,
-		"available_hours": availableHours,
+		"year":                yearInt,
+		"total_hours":         summary.YearlyTarget,
+		"carryover_hours":     summary.CarryoverHours,
+		"total_available":     summary.TotalAvailable,
+		"used_hours":          summary.UsedHours,
+		"used_from_carryover": summary.UsedFromCarryover,
+		"used_from_current":   summary.UsedFromCurrent,
+		"available_hours":     summary.RemainingTotal,
 	})
 }
 
@@ -304,22 +298,16 @@ func GetOverview(c *gin.Context) {
 	trainingHoursLeft := cfg.TrainingHours.YearlyTarget - totalTrainingHours
 	trainingDaysLeft := float64(trainingHoursLeft) / 9.0
 
-	// Calculate vacation hours
-	vacationEntries, err := db.GetVacationEntriesForYear(yearInt)
+	// Calculate vacation hours using summary (includes carryover)
+	vacationSummary, err := db.GetVacationSummaryForYear(yearInt)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get vacation entries"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get vacation summary"})
 		return
 	}
 
-	var totalVacationHours int
-	for _, entry := range vacationEntries {
-		totalVacationHours += entry.Vacation_hours
-	}
+	vacationDaysLeft := float64(vacationSummary.RemainingTotal) / 9.0
 
-	vacationHoursLeft := cfg.VacationHours.YearlyTarget - totalVacationHours
-	vacationDaysLeft := float64(vacationHoursLeft) / 9.0
-
-	// Return overview data
+	// Return overview data with carryover breakdown
 	c.JSON(http.StatusOK, gin.H{
 		"year": yearInt,
 		"training": gin.H{
@@ -329,10 +317,100 @@ func GetOverview(c *gin.Context) {
 			"days_left":       trainingDaysLeft,
 		},
 		"vacation": gin.H{
-			"total_hours":     cfg.VacationHours.YearlyTarget,
-			"used_hours":      totalVacationHours,
-			"available_hours": vacationHoursLeft,
-			"days_left":       vacationDaysLeft,
+			"total_hours":         vacationSummary.YearlyTarget,
+			"carryover_hours":     vacationSummary.CarryoverHours,
+			"total_available":     vacationSummary.TotalAvailable,
+			"used_hours":          vacationSummary.UsedHours,
+			"used_from_carryover": vacationSummary.UsedFromCarryover,
+			"used_from_current":   vacationSummary.UsedFromCurrent,
+			"available_hours":     vacationSummary.RemainingTotal,
+			"days_left":           vacationDaysLeft,
 		},
 	})
+}
+
+// GetVacationCarryover handles GET /api/vacation-carryover?year=YYYY
+func GetVacationCarryover(c *gin.Context) {
+	year := c.Query("year")
+	if year == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Year parameter is required"})
+		return
+	}
+
+	yearInt, err := strconv.Atoi(year)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid year parameter"})
+		return
+	}
+
+	carryover, err := db.GetVacationCarryoverForYear(yearInt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, carryover)
+}
+
+// SetVacationCarryover handles POST /api/vacation-carryover
+func SetVacationCarryover(c *gin.Context) {
+	var carryover db.VacationCarryover
+	if err := c.ShouldBindJSON(&carryover); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := db.SetVacationCarryover(carryover); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Carryover saved successfully", "carryover": carryover})
+}
+
+// DeleteVacationCarryover handles DELETE /api/vacation-carryover?year=YYYY
+func DeleteVacationCarryover(c *gin.Context) {
+	year := c.Query("year")
+	if year == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Year parameter is required"})
+		return
+	}
+
+	yearInt, err := strconv.Atoi(year)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid year parameter"})
+		return
+	}
+
+	if err := db.DeleteVacationCarryover(yearInt); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Carryover deleted successfully"})
+}
+
+// GetVacationSummary handles GET /api/vacation-summary?year=YYYY
+func GetVacationSummary(c *gin.Context) {
+	year := c.Query("year")
+	var yearInt int
+	var err error
+
+	if year == "" {
+		yearInt = time.Now().Year()
+	} else {
+		yearInt, err = strconv.Atoi(year)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid year parameter"})
+			return
+		}
+	}
+
+	summary, err := db.GetVacationSummaryForYear(yearInt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, summary)
 }

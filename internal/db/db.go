@@ -76,6 +76,29 @@ type TimesheetEntry struct {
 	Holiday_hours  int
 }
 
+// VacationCarryover represents vacation hours carried over from previous year
+type VacationCarryover struct {
+	Id             int
+	Year           int
+	CarryoverHours int
+	SourceYear     int
+	CreatedAt      string
+	UpdatedAt      string
+	Notes          string
+}
+
+// VacationSummary provides comprehensive vacation hours breakdown for a year
+type VacationSummary struct {
+	Year              int
+	YearlyTarget      int
+	CarryoverHours    int
+	TotalAvailable    int
+	UsedHours         int
+	UsedFromCarryover int
+	UsedFromCurrent   int
+	RemainingTotal    int
+}
+
 // GetDBPath returns the path to the database file
 func GetDBPath() string {
 	// Check if development mode is enabled
@@ -175,6 +198,16 @@ func InitializeDatabase(dbPath string) error {
 		`CREATE INDEX IF NOT EXISTS idx_client_rates_client ON client_rates(client_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_client_rates_date ON client_rates(effective_date);`,
 		`CREATE INDEX IF NOT EXISTS idx_client_rates_client_date ON client_rates(client_id, effective_date);`,
+		`CREATE TABLE IF NOT EXISTS vacation_carryover (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			year INTEGER NOT NULL UNIQUE,
+			carryover_hours INTEGER NOT NULL,
+			source_year INTEGER NOT NULL,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			notes TEXT
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_vacation_carryover_year ON vacation_carryover(year);`,
 	}
 
 	for _, stmt := range stmts {
@@ -513,4 +546,103 @@ func GetVacationHoursForYear(year int) (int, error) {
 		return 0, fmt.Errorf("failed to get vacation hours from timesheet table: %w", err)
 	}
 	return total, nil
+}
+
+// GetVacationCarryoverForYear returns carryover hours for a specific year
+func GetVacationCarryoverForYear(year int) (VacationCarryover, error) {
+	var carryover VacationCarryover
+	err := db.QueryRow(`
+		SELECT id, year, carryover_hours, source_year, created_at, updated_at, COALESCE(notes, '') as notes
+		FROM vacation_carryover
+		WHERE year = ?
+	`, year).Scan(
+		&carryover.Id,
+		&carryover.Year,
+		&carryover.CarryoverHours,
+		&carryover.SourceYear,
+		&carryover.CreatedAt,
+		&carryover.UpdatedAt,
+		&carryover.Notes,
+	)
+
+	if err == sql.ErrNoRows {
+		// No carryover record exists - return empty struct with 0 hours
+		return VacationCarryover{
+			Year:           year,
+			CarryoverHours: 0,
+			SourceYear:     year - 1,
+		}, nil
+	}
+
+	if err != nil {
+		return VacationCarryover{}, fmt.Errorf("failed to get vacation carryover: %w", err)
+	}
+
+	return carryover, nil
+}
+
+// SetVacationCarryover creates or updates carryover for a year
+func SetVacationCarryover(carryover VacationCarryover) error {
+	// Use REPLACE INTO for upsert behavior (insert or update)
+	_, err := db.Exec(`
+		REPLACE INTO vacation_carryover (year, carryover_hours, source_year, updated_at, notes)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+	`, carryover.Year, carryover.CarryoverHours, carryover.SourceYear, carryover.Notes)
+
+	if err != nil {
+		return fmt.Errorf("failed to set vacation carryover: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteVacationCarryover removes carryover for a year
+func DeleteVacationCarryover(year int) error {
+	_, err := db.Exec(`DELETE FROM vacation_carryover WHERE year = ?`, year)
+	if err != nil {
+		return fmt.Errorf("failed to delete vacation carryover: %w", err)
+	}
+	return nil
+}
+
+// GetVacationSummaryForYear returns comprehensive vacation info for a year
+func GetVacationSummaryForYear(year int) (VacationSummary, error) {
+	summary := VacationSummary{Year: year}
+
+	// 1. Get yearly target from config
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return summary, fmt.Errorf("failed to get config: %w", err)
+	}
+	summary.YearlyTarget = cfg.VacationHours.YearlyTarget
+
+	// 2. Get carryover hours
+	carryover, err := GetVacationCarryoverForYear(year)
+	if err != nil {
+		return summary, fmt.Errorf("failed to get carryover: %w", err)
+	}
+	summary.CarryoverHours = carryover.CarryoverHours
+
+	// 3. Get used hours from timesheet
+	usedHours, err := GetVacationHoursForYear(year)
+	if err != nil {
+		return summary, fmt.Errorf("failed to get used hours: %w", err)
+	}
+	summary.UsedHours = usedHours
+
+	// 4. Calculate breakdown
+	summary.TotalAvailable = summary.YearlyTarget + summary.CarryoverHours
+
+	// Deduct from carryover first (per user requirement)
+	if usedHours <= summary.CarryoverHours {
+		summary.UsedFromCarryover = usedHours
+		summary.UsedFromCurrent = 0
+	} else {
+		summary.UsedFromCarryover = summary.CarryoverHours
+		summary.UsedFromCurrent = usedHours - summary.CarryoverHours
+	}
+
+	summary.RemainingTotal = summary.TotalAvailable - usedHours
+
+	return summary, nil
 }

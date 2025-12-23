@@ -129,16 +129,14 @@ func InitialOverviewModel() OverviewModel {
 	trainingHoursLeft := configFile.TrainingHours.YearlyTarget - totalTrainingHours
 	trainingDaysLeft := float64(trainingHoursLeft) / 9.0
 
-	// Calculate vacation days left
-	vacationEntries, err := dataLayer.GetVacationEntriesForYear(currentYear)
-	var totalVacationHours int
+	// Calculate vacation days left (includes carryover)
+	vacationSummary, err := dataLayer.GetVacationSummaryForYear(currentYear)
+	var vacationDaysLeft float64
 	if err == nil {
-		for _, entry := range vacationEntries {
-			totalVacationHours += entry.Vacation_hours
-		}
+		vacationDaysLeft = float64(vacationSummary.RemainingTotal) / 9.0
+	} else {
+		vacationDaysLeft = 0
 	}
-	vacationHoursLeft := configFile.VacationHours.YearlyTarget - totalVacationHours
-	vacationDaysLeft := float64(vacationHoursLeft) / 9.0
 
 	return OverviewModel{
 		trainingDaysLeft: trainingDaysLeft,
@@ -180,16 +178,13 @@ func (m OverviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		trainingHoursLeft := configFile.TrainingHours.YearlyTarget - totalTrainingHours
 		m.trainingDaysLeft = float64(trainingHoursLeft) / 9.0
 
-		// Calculate vacation days left
-		vacationEntries, err := dataLayer.GetVacationEntriesForYear(msg.Year)
-		var totalVacationHours int
+		// Calculate vacation days left (includes carryover)
+		vacationSummary, err := dataLayer.GetVacationSummaryForYear(msg.Year)
 		if err == nil {
-			for _, entry := range vacationEntries {
-				totalVacationHours += entry.Vacation_hours
-			}
+			m.vacationDaysLeft = float64(vacationSummary.RemainingTotal) / 9.0
+		} else {
+			m.vacationDaysLeft = 0
 		}
-		vacationHoursLeft := configFile.VacationHours.YearlyTarget - totalVacationHours
-		m.vacationDaysLeft = float64(vacationHoursLeft) / 9.0
 
 		return m, nil
 

@@ -223,6 +223,50 @@ func (c *Client) GetVacationHoursForYear(year int) (int, error) {
 	return total, nil
 }
 
+// GetVacationCarryoverForYear retrieves carryover hours for a specific year
+func (c *Client) GetVacationCarryoverForYear(year int) (db.VacationCarryover, error) {
+	endpoint := fmt.Sprintf("/api/vacation-carryover?year=%d", year)
+	data, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return db.VacationCarryover{}, err
+	}
+
+	var carryover db.VacationCarryover
+	if err := json.Unmarshal(data, &carryover); err != nil {
+		return db.VacationCarryover{}, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	return carryover, nil
+}
+
+// SetVacationCarryover creates or updates carryover for a year
+func (c *Client) SetVacationCarryover(carryover db.VacationCarryover) error {
+	endpoint := "/api/vacation-carryover"
+	_, err := c.makeRequest("POST", endpoint, carryover)
+	return err
+}
+
+// DeleteVacationCarryover removes carryover for a year
+func (c *Client) DeleteVacationCarryover(year int) error {
+	endpoint := fmt.Sprintf("/api/vacation-carryover?year=%d", year)
+	_, err := c.makeRequest("DELETE", endpoint, nil)
+	return err
+}
+
+// GetVacationSummaryForYear retrieves comprehensive vacation info for a year
+func (c *Client) GetVacationSummaryForYear(year int) (db.VacationSummary, error) {
+	endpoint := fmt.Sprintf("/api/vacation-summary?year=%d", year)
+	data, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return db.VacationSummary{}, err
+	}
+
+	var summary db.VacationSummary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		return db.VacationSummary{}, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	return summary, nil
+}
+
 // GetTrainingBudgetEntriesForYear retrieves training budget entries for a year
 func (c *Client) GetTrainingBudgetEntriesForYear(year int) ([]db.TrainingBudgetEntry, error) {
 	endpoint := fmt.Sprintf("/api/training-budget?year=%d", year)

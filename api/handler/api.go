@@ -178,6 +178,12 @@ func StartServer(p *tea.Program, refreshChan chan ui.RefreshMsg) {
 			GetVacationHours(c)
 		})
 
+		// Vacation Carryover routes
+		api.GET("/vacation-carryover", GetVacationCarryover)
+		api.POST("/vacation-carryover", SetVacationCarryover)
+		api.DELETE("/vacation-carryover", DeleteVacationCarryover)
+		api.GET("/vacation-summary", GetVacationSummary)
+
 		// Overview route (training and vacation days left)
 		api.GET("/overview", func(c *gin.Context) {
 			GetOverview(c)

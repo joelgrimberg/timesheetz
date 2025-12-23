@@ -957,3 +957,93 @@ func (d *DualLayer) GetClientWithRates(clientId int) (ClientWithRates, error) {
 	return ClientWithRates{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
 }
 
+// Vacation Carryover Operations
+
+func (d *DualLayer) GetVacationCarryoverForYear(year int) (VacationCarryover, error) {
+	localCarryover, localErr := d.local.GetVacationCarryoverForYear(year)
+	remoteCarryover, remoteErr := d.remote.GetVacationCarryoverForYear(year)
+
+	if localErr == nil && remoteErr == nil {
+		if !reflect.DeepEqual(localCarryover, remoteCarryover) {
+			logging.Log("DUAL MODE: GetVacationCarryoverForYear - Mismatch for year %d: local=%+v, remote=%+v",
+				year, localCarryover, remoteCarryover)
+		}
+		return localCarryover, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteCarryover, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localCarryover, nil
+	}
+
+	return VacationCarryover{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) SetVacationCarryover(carryover VacationCarryover) error {
+	localErr := d.local.SetVacationCarryover(carryover)
+	remoteErr := d.remote.SetVacationCarryover(carryover)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB write failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API write failed: %v", remoteErr)
+	}
+
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote writes failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+
+	if localErr != nil {
+		return fmt.Errorf("local write failed: %w", localErr)
+	}
+	return remoteErr
+}
+
+func (d *DualLayer) DeleteVacationCarryover(year int) error {
+	localErr := d.local.DeleteVacationCarryover(year)
+	remoteErr := d.remote.DeleteVacationCarryover(year)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB delete failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API delete failed: %v", remoteErr)
+	}
+
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote deletes failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+
+	if localErr != nil {
+		return fmt.Errorf("local delete failed: %w", localErr)
+	}
+	return remoteErr
+}
+
+func (d *DualLayer) GetVacationSummaryForYear(year int) (VacationSummary, error) {
+	localSummary, localErr := d.local.GetVacationSummaryForYear(year)
+	remoteSummary, remoteErr := d.remote.GetVacationSummaryForYear(year)
+
+	if localErr == nil && remoteErr == nil {
+		if !reflect.DeepEqual(localSummary, remoteSummary) {
+			logging.Log("DUAL MODE: GetVacationSummaryForYear - Mismatch for year %d", year)
+		}
+		return localSummary, nil
+	}
+
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteSummary, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localSummary, nil
+	}
+
+	return VacationSummary{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}

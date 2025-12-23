@@ -21,6 +21,12 @@ type DataLayer interface {
 	GetVacationEntriesForYear(year int) ([]TimesheetEntry, error)
 	GetVacationHoursForYear(year int) (int, error)
 
+	// Vacation carryover operations
+	GetVacationCarryoverForYear(year int) (VacationCarryover, error)
+	SetVacationCarryover(carryover VacationCarryover) error
+	DeleteVacationCarryover(year int) error
+	GetVacationSummaryForYear(year int) (VacationSummary, error)
+
 	// Training budget operations
 	GetTrainingBudgetEntriesForYear(year int) ([]TrainingBudgetEntry, error)
 	AddTrainingBudgetEntry(entry TrainingBudgetEntry) error
@@ -99,6 +105,22 @@ func (l *LocalDBLayer) GetVacationEntriesForYear(year int) ([]TimesheetEntry, er
 
 func (l *LocalDBLayer) GetVacationHoursForYear(year int) (int, error) {
 	return GetVacationHoursForYear(year)
+}
+
+func (l *LocalDBLayer) GetVacationCarryoverForYear(year int) (VacationCarryover, error) {
+	return GetVacationCarryoverForYear(year)
+}
+
+func (l *LocalDBLayer) SetVacationCarryover(carryover VacationCarryover) error {
+	return SetVacationCarryover(carryover)
+}
+
+func (l *LocalDBLayer) DeleteVacationCarryover(year int) error {
+	return DeleteVacationCarryover(year)
+}
+
+func (l *LocalDBLayer) GetVacationSummaryForYear(year int) (VacationSummary, error) {
+	return GetVacationSummaryForYear(year)
 }
 
 func (l *LocalDBLayer) GetTrainingBudgetEntriesForYear(year int) ([]TrainingBudgetEntry, error) {
