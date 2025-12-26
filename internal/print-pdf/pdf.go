@@ -13,11 +13,13 @@ import (
 	"github.com/jung-kurt/gofpdf"
 )
 
+// Pre-compile ANSI regex at package level for better performance
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\[[0-9;]*[a-zA-Z]`)
+
 // stripANSI removes ANSI escape sequences, replaces box-drawing characters, and handles emojis
 func stripANSI(str string) string {
-	// Remove ANSI escape sequences
-	re := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\[[0-9;]*[a-zA-Z]`)
-	str = re.ReplaceAllString(str, "")
+	// Remove ANSI escape sequences using pre-compiled regex
+	str = ansiRegex.ReplaceAllString(str, "")
 
 	// Replace box-drawing characters with ASCII equivalents
 	replacements := map[rune]string{
