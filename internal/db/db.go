@@ -277,7 +277,18 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 	}
 	defer rows.Close()
 
-	var entries []TimesheetEntry
+	// Pre-allocate slice with reasonable capacity
+	// Use 365 for yearly queries, which is the common case
+	var capacity int
+	if year != 0 && month != 0 {
+		capacity = 31 // Monthly query - max days in a month
+	} else if year != 0 {
+		capacity = 365 // Yearly query
+	} else {
+		capacity = 500 // All entries - conservative estimate
+	}
+	entries := make([]TimesheetEntry, 0, capacity)
+
 	for rows.Next() {
 		var entry TimesheetEntry
 		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours,
@@ -525,7 +536,8 @@ func GetVacationEntriesForYear(year int) ([]TimesheetEntry, error) {
 	}
 	defer rows.Close()
 
-	var entries []TimesheetEntry
+	// Pre-allocate slice with capacity for typical vacation days per year
+	entries := make([]TimesheetEntry, 0, 30)
 	for rows.Next() {
 		var entry TimesheetEntry
 		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours, &entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours); err != nil {

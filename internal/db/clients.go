@@ -60,7 +60,8 @@ func GetAllClients() ([]Client, error) {
 	}
 	defer rows.Close()
 
-	var clients []Client
+	// Pre-allocate slice with reasonable capacity for typical number of clients
+	clients := make([]Client, 0, 10)
 	for rows.Next() {
 		var client Client
 		var isActive int
@@ -88,7 +89,8 @@ func GetActiveClients() ([]Client, error) {
 	}
 	defer rows.Close()
 
-	var clients []Client
+	// Pre-allocate slice with reasonable capacity for typical number of active clients
+	clients := make([]Client, 0, 10)
 	for rows.Next() {
 		var client Client
 		var isActive int
@@ -249,7 +251,8 @@ func GetClientRates(clientId int) ([]ClientRate, error) {
 	}
 	defer rows.Close()
 
-	var rates []ClientRate
+	// Pre-allocate slice with reasonable capacity for typical number of rate changes
+	rates := make([]ClientRate, 0, 10)
 	for rows.Next() {
 		var rate ClientRate
 		if err := rows.Scan(&rate.Id, &rate.ClientId, &rate.HourlyRate,
@@ -396,7 +399,8 @@ func CalculateEarningsForYear(year int) (EarningsOverview, error) {
 		return EarningsOverview{}, fmt.Errorf("failed to get timesheet entries: %w", err)
 	}
 
-	var earningsEntries []EarningsEntry
+	// Pre-allocate slice with capacity for typical year's work days (250-365)
+	earningsEntries := make([]EarningsEntry, 0, 300)
 	var totalHours int
 	var totalEarnings float64
 
@@ -464,7 +468,8 @@ func CalculateEarningsSummaryForYear(year int) (EarningsOverview, error) {
 	}
 
 	// Convert aggregated data to EarningsEntry slice
-	var earningsEntries []EarningsEntry
+	// Pre-allocate for number of unique client-rate combinations
+	earningsEntries := make([]EarningsEntry, 0, len(aggregated))
 	var totalHours int
 	var totalEarnings float64
 
@@ -498,7 +503,8 @@ func CalculateEarningsForMonth(year int, month int) (EarningsOverview, error) {
 		return EarningsOverview{}, fmt.Errorf("failed to get timesheet entries: %w", err)
 	}
 
-	var earningsEntries []EarningsEntry
+	// Pre-allocate slice with capacity for typical month's work days (20-30)
+	earningsEntries := make([]EarningsEntry, 0, 30)
 	var totalHours int
 	var totalEarnings float64
 

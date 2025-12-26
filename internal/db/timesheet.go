@@ -26,7 +26,8 @@ func GetTrainingEntriesForYear(year int) ([]TimesheetEntry, error) {
 	defer rows.Close()
 
 	// Process the results
-	var entries []TimesheetEntry
+	// Pre-allocate slice with capacity for typical training days per year
+	entries := make([]TimesheetEntry, 0, 50)
 	for rows.Next() {
 		var entry TimesheetEntry
 		err := rows.Scan(
@@ -78,7 +79,8 @@ func GetTrainingBudgetEntriesForYear(year int) ([]TrainingBudgetEntry, error) {
 	defer rows.Close()
 
 	// Process the results
-	var entries []TrainingBudgetEntry
+	// Pre-allocate slice with capacity for typical training budget entries per year
+	entries := make([]TrainingBudgetEntry, 0, 50)
 	for rows.Next() {
 		var entry TrainingBudgetEntry
 		err := rows.Scan(
