@@ -391,8 +391,87 @@ func GetClientRateByName(clientName string, date string) (float64, error) {
 
 // Earnings Calculation Functions
 
+// rateCache holds cached client and rate information for efficient lookups
+type rateCache struct {
+	clientsByName map[string]int              // clientName -> clientId
+	ratesByClient map[int][]ClientRate        // clientId -> sorted rates (newest first)
+}
+
+// buildRateCache creates a cache of all clients and their rates
+// This eliminates N+1 queries by loading all data upfront
+func buildRateCache() (*rateCache, error) {
+	cache := &rateCache{
+		clientsByName: make(map[string]int),
+		ratesByClient: make(map[int][]ClientRate),
+	}
+
+	// Load all clients into cache
+	clients, err := GetAllClients()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get clients: %w", err)
+	}
+	for _, client := range clients {
+		cache.clientsByName[client.Name] = client.Id
+	}
+
+	// Load all rates for all clients
+	query := `SELECT id, client_id, hourly_rate, effective_date, notes, created_at
+	          FROM client_rates
+	          ORDER BY client_id, effective_date DESC`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query rates: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var rate ClientRate
+		if err := rows.Scan(&rate.Id, &rate.ClientId, &rate.HourlyRate,
+			&rate.EffectiveDate, &rate.Notes, &rate.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan rate: %w", err)
+		}
+		cache.ratesByClient[rate.ClientId] = append(cache.ratesByClient[rate.ClientId], rate)
+	}
+
+	return cache, nil
+}
+
+// getRateFromCache gets the rate for a client on a specific date from the cache
+// Returns the rate that was effective on the given date (most recent rate where effective_date <= date)
+func (c *rateCache) getRateFromCache(clientName string, date string) float64 {
+	// Get client ID
+	clientId, ok := c.clientsByName[clientName]
+	if !ok {
+		return 0.0
+	}
+
+	// Get rates for this client
+	rates, ok := c.ratesByClient[clientId]
+	if !ok || len(rates) == 0 {
+		return 0.0
+	}
+
+	// Find the most recent rate where effective_date <= date
+	// Rates are sorted by effective_date DESC (newest first)
+	for _, rate := range rates {
+		if rate.EffectiveDate <= date {
+			return rate.HourlyRate
+		}
+	}
+
+	// No rate found for this date
+	return 0.0
+}
+
 // CalculateEarningsForYear calculates total earnings for a specific year
 func CalculateEarningsForYear(year int) (EarningsOverview, error) {
+	// Build rate cache once for all lookups - eliminates N+1 query problem
+	cache, err := buildRateCache()
+	if err != nil {
+		return EarningsOverview{}, fmt.Errorf("failed to build rate cache: %w", err)
+	}
+
 	// Get all timesheet entries for the year with client_hours > 0
 	entries, err := GetAllTimesheetEntries(year, 0)
 	if err != nil {
@@ -410,8 +489,8 @@ func CalculateEarningsForYear(year int) (EarningsOverview, error) {
 			continue
 		}
 
-		// Get the rate that was active on this date
-		rate, _ := GetClientRateByName(entry.Client_name, entry.Date)
+		// Get the rate from cache (no database query!)
+		rate := cache.getRateFromCache(entry.Client_name, entry.Date)
 
 		earnings := float64(entry.Client_hours) * rate
 
@@ -438,6 +517,12 @@ func CalculateEarningsForYear(year int) (EarningsOverview, error) {
 
 // CalculateEarningsSummaryForYear calculates earnings grouped by client and rate
 func CalculateEarningsSummaryForYear(year int) (EarningsOverview, error) {
+	// Build rate cache once for all lookups - eliminates N+1 query problem
+	cache, err := buildRateCache()
+	if err != nil {
+		return EarningsOverview{}, fmt.Errorf("failed to build rate cache: %w", err)
+	}
+
 	// Get all timesheet entries for the year with client_hours > 0
 	entries, err := GetAllTimesheetEntries(year, 0)
 	if err != nil {
@@ -457,8 +542,8 @@ func CalculateEarningsSummaryForYear(year int) (EarningsOverview, error) {
 			continue
 		}
 
-		// Get the rate that was active on this date
-		rate, _ := GetClientRateByName(entry.Client_name, entry.Date)
+		// Get the rate from cache (no database query!)
+		rate := cache.getRateFromCache(entry.Client_name, entry.Date)
 
 		key := ClientRateKey{
 			ClientName: entry.Client_name,
@@ -497,6 +582,12 @@ func CalculateEarningsSummaryForYear(year int) (EarningsOverview, error) {
 
 // CalculateEarningsForMonth calculates total earnings for a specific month
 func CalculateEarningsForMonth(year int, month int) (EarningsOverview, error) {
+	// Build rate cache once for all lookups - eliminates N+1 query problem
+	cache, err := buildRateCache()
+	if err != nil {
+		return EarningsOverview{}, fmt.Errorf("failed to build rate cache: %w", err)
+	}
+
 	// Get all timesheet entries for the month
 	entries, err := GetAllTimesheetEntries(year, time.Month(month))
 	if err != nil {
@@ -514,8 +605,8 @@ func CalculateEarningsForMonth(year int, month int) (EarningsOverview, error) {
 			continue
 		}
 
-		// Get the rate that was active on this date
-		rate, _ := GetClientRateByName(entry.Client_name, entry.Date)
+		// Get the rate from cache (no database query!)
+		rate := cache.getRateFromCache(entry.Client_name, entry.Date)
 
 		earnings := float64(entry.Client_hours) * rate
 
