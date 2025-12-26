@@ -42,12 +42,38 @@ func TestInitializeDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-
-	// Verify tables were created by trying to connect
-	if err := Connect(dbPath); err != nil {
-		t.Fatalf("Failed to connect after initialization: %v", err)
-	}
 	defer Close()
+
+	// InitializeDatabase already opens the connection, so we don't need to call Connect
+	// Verify connection is working
+	if err := Ping(); err != nil {
+		t.Fatalf("Failed to ping database after initialization: %v", err)
+	}
+
+	// Verify indexes were created
+	expectedIndexes := []string{
+		"idx_client_name",
+		"idx_timesheet_date",
+		"idx_timesheet_date_client",
+		"idx_training_date",
+		"idx_clients_name",
+		"idx_clients_active",
+		"idx_client_rates_client",
+		"idx_client_rates_date",
+		"idx_client_rates_client_date",
+		"idx_vacation_carryover_year",
+	}
+
+	for _, indexName := range expectedIndexes {
+		var count int
+		err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?", indexName).Scan(&count)
+		if err != nil {
+			t.Fatalf("Failed to check for index %s: %v", indexName, err)
+		}
+		if count == 0 {
+			t.Errorf("Expected index %s was not created", indexName)
+		}
+	}
 }
 
 func TestGetAllTimesheetEntries(t *testing.T) {

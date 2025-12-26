@@ -170,6 +170,8 @@ func InitializeDatabase(dbPath string) error {
 			holiday_hours INTEGER DEFAULT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_client_name ON timesheet(client_name);`,
+		`CREATE INDEX IF NOT EXISTS idx_timesheet_date ON timesheet(date);`,
+		`CREATE INDEX IF NOT EXISTS idx_timesheet_date_client ON timesheet(date, client_name);`,
 		`CREATE TABLE IF NOT EXISTS training_budget (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			date TEXT NOT NULL,
