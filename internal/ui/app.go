@@ -175,6 +175,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.TrainingModel = InitialTrainingModel()
 				} else if m.ActiveMode == ConfigMode && prevMode != ConfigMode {
 					m.ConfigModel = InitialConfigModel()
+					return m, m.ConfigModel.Init()
 				}
 			case ">":
 				// Move to next tab
@@ -207,6 +208,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.TrainingModel = InitialTrainingModel()
 				} else if m.ActiveMode == ConfigMode && prevMode != ConfigMode {
 					m.ConfigModel = InitialConfigModel()
+					return m, m.ConfigModel.Init()
 				}
 			case "$":
 				// Switch to training budget view

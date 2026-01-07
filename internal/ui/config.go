@@ -3,7 +3,10 @@ package ui
 import (
 	"fmt"
 	"strconv"
+	"sync"
+	"time"
 	"timesheet/internal/config"
+	"timesheet/internal/updater"
 	"timesheet/internal/version"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -13,6 +16,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rmhubbert/bubbletea-overlay"
 )
+
+// Package-level cache for update check results (1-hour cache to avoid rate limiting)
+var (
+	lastCheckTime time.Time
+	cachedResult  updateCheckResultMsg
+	checkMutex    sync.Mutex
+)
+
+// updateCheckResultMsg contains the result of checking for updates
+type updateCheckResultMsg struct {
+	latestVersion   string
+	updateAvailable bool
+	err             error
+}
 
 // ConfigKeyMap defines the keybindings for the config view
 type ConfigKeyMap struct {
@@ -106,6 +123,12 @@ type ConfigModel struct {
 	modeModal     *ModeModalModel
 	overlay       *overlay.Model
 	apiModeRowIdx int // Index of the "API Mode" row in the table
+
+	// Update checking fields
+	latestVersion   string
+	updateAvailable bool
+	checkingUpdate  bool
+	updateCheckErr  error
 }
 
 // InitialConfigModel creates a new config model
@@ -150,77 +173,10 @@ func InitialConfigModel() ConfigModel {
 		}
 	}
 
-	// Convert config to table rows
-	var rows []table.Row
-
-	// Version Information
-	rows = append(rows, table.Row{"Version", version.Version})
-	rows = append(rows, table.Row{"", ""}) // Empty row for spacing
-
-	// User Information
-	rows = append(rows, table.Row{"User Information", ""})
-	rows = append(rows, table.Row{"  Name", cfg.Name})
-	rows = append(rows, table.Row{"  Company Name", cfg.CompanyName})
-	rows = append(rows, table.Row{"  Free Speech", cfg.FreeSpeech})
-
-	// API Server Configuration
-	rows = append(rows, table.Row{"API Server", ""})
-	rows = append(rows, table.Row{"  Start API Server", fmt.Sprintf("%v", cfg.StartAPIServer)})
-	rows = append(rows, table.Row{"  API Port", strconv.Itoa(cfg.APIPort)})
-
-	// API Client Configuration
-	rows = append(rows, table.Row{"API Client", ""})
-	apiModeRowIdx := len(rows) // Store the index of the API Mode row (after "API Client" header)
-	if cfg.APIMode == "" {
-		rows = append(rows, table.Row{"  API Mode", "local (default)"})
-	} else {
-		rows = append(rows, table.Row{"  API Mode", cfg.APIMode})
-	}
-	if cfg.APIBaseURL == "" {
-		rows = append(rows, table.Row{"  API Base URL", "(not set)"})
-	} else {
-		rows = append(rows, table.Row{"  API Base URL", cfg.APIBaseURL})
-	}
-
-	// Database Location
-	rows = append(rows, table.Row{"Database", ""})
-	if cfg.DBLocation == "" {
-		rows = append(rows, table.Row{"  DB Location", "(default)"})
-	} else {
-		rows = append(rows, table.Row{"  DB Location", cfg.DBLocation})
-	}
-
-	// Development Settings
-	rows = append(rows, table.Row{"Development", ""})
-	rows = append(rows, table.Row{"  Development Mode", fmt.Sprintf("%v", cfg.DevelopmentMode)})
-
-	// Document Settings
-	rows = append(rows, table.Row{"Document", ""})
-	rows = append(rows, table.Row{"  Send Document Type", cfg.SendDocumentType})
-
-	// Email Configuration
-	rows = append(rows, table.Row{"Email", ""})
-	rows = append(rows, table.Row{"  Send To Others", fmt.Sprintf("%v", cfg.SendToOthers)})
-	rows = append(rows, table.Row{"  Recipient Email", cfg.RecipientEmail})
-	rows = append(rows, table.Row{"  Sender Email", cfg.SenderEmail})
-	rows = append(rows, table.Row{"  Reply To Email", cfg.ReplyToEmail})
-	if cfg.ResendAPIKey != "" {
-		// Mask API key for security
-		maskedKey := maskAPIKey(cfg.ResendAPIKey)
-		rows = append(rows, table.Row{"  Resend API Key", maskedKey})
-	} else {
-		rows = append(rows, table.Row{"  Resend API Key", "(not set)"})
-	}
-
-	// Training Hours Configuration
-	rows = append(rows, table.Row{"Training Hours", ""})
-	rows = append(rows, table.Row{"  Yearly Target", strconv.Itoa(cfg.TrainingHours.YearlyTarget)})
-	rows = append(rows, table.Row{"  Category", cfg.TrainingHours.Category})
-
-	// Vacation Hours Configuration
-	rows = append(rows, table.Row{"Vacation Hours", ""})
-	rows = append(rows, table.Row{"  Yearly Target", strconv.Itoa(cfg.VacationHours.YearlyTarget)})
-	rows = append(rows, table.Row{"  Category", cfg.VacationHours.Category})
+	// Convert config to table rows using buildTableRows
+	// We need to create a temporary model to call buildTableRows
+	tempModel := ConfigModel{}
+	rows, apiModeRowIdx := tempModel.buildTableRows(&cfg)
 
 	t.SetRows(rows)
 
@@ -362,12 +318,152 @@ func maskAPIKey(key string) string {
 	return key[:4] + "..." + key[len(key)-4:]
 }
 
+// buildTableRows builds the configuration table rows with update info
+func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, int) {
+	var rows []table.Row
+
+	// Version Information with update check
+	versionValue := version.Version
+	if m.updateAvailable && m.latestVersion != "" {
+		// Add inline badge showing available update
+		badge := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("2")). // Green color
+			Bold(true).
+			Render(fmt.Sprintf(" (%s available)", m.latestVersion))
+		versionValue = versionValue + badge
+	} else if m.checkingUpdate {
+		// Show loading indicator
+		spinner := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render(" (checking...)")
+		versionValue = versionValue + spinner
+	}
+	rows = append(rows, table.Row{"Version", versionValue})
+	rows = append(rows, table.Row{"", ""}) // Empty row for spacing
+
+	// User Information
+	rows = append(rows, table.Row{"User Information", ""})
+	rows = append(rows, table.Row{"  Name", cfg.Name})
+	rows = append(rows, table.Row{"  Company Name", cfg.CompanyName})
+	rows = append(rows, table.Row{"  Free Speech", cfg.FreeSpeech})
+
+	// API Server Configuration
+	rows = append(rows, table.Row{"API Server", ""})
+	rows = append(rows, table.Row{"  Start API Server", fmt.Sprintf("%v", cfg.StartAPIServer)})
+	rows = append(rows, table.Row{"  API Port", strconv.Itoa(cfg.APIPort)})
+
+	// API Client Configuration
+	rows = append(rows, table.Row{"API Client", ""})
+	apiModeRowIdx := len(rows) // Store the index of the API Mode row (after "API Client" header)
+	if cfg.APIMode == "" {
+		rows = append(rows, table.Row{"  API Mode", "local (default)"})
+	} else {
+		rows = append(rows, table.Row{"  API Mode", cfg.APIMode})
+	}
+	if cfg.APIBaseURL == "" {
+		rows = append(rows, table.Row{"  API Base URL", "(not set)"})
+	} else {
+		rows = append(rows, table.Row{"  API Base URL", cfg.APIBaseURL})
+	}
+
+	// Database Location
+	rows = append(rows, table.Row{"Database", ""})
+	if cfg.DBLocation == "" {
+		rows = append(rows, table.Row{"  DB Location", "(default)"})
+	} else {
+		rows = append(rows, table.Row{"  DB Location", cfg.DBLocation})
+	}
+
+	// Development Settings
+	rows = append(rows, table.Row{"Development", ""})
+	rows = append(rows, table.Row{"  Development Mode", fmt.Sprintf("%v", cfg.DevelopmentMode)})
+
+	// Document Settings
+	rows = append(rows, table.Row{"Document", ""})
+	rows = append(rows, table.Row{"  Send Document Type", cfg.SendDocumentType})
+
+	// Email Configuration
+	rows = append(rows, table.Row{"Email", ""})
+	rows = append(rows, table.Row{"  Send To Others", fmt.Sprintf("%v", cfg.SendToOthers)})
+	rows = append(rows, table.Row{"  Recipient Email", cfg.RecipientEmail})
+	rows = append(rows, table.Row{"  Sender Email", cfg.SenderEmail})
+	rows = append(rows, table.Row{"  Reply To Email", cfg.ReplyToEmail})
+	if cfg.ResendAPIKey != "" {
+		// Mask API key for security
+		maskedKey := maskAPIKey(cfg.ResendAPIKey)
+		rows = append(rows, table.Row{"  Resend API Key", maskedKey})
+	} else {
+		rows = append(rows, table.Row{"  Resend API Key", "(not set)"})
+	}
+
+	// Training Hours Configuration
+	rows = append(rows, table.Row{"Training Hours", ""})
+	rows = append(rows, table.Row{"  Yearly Target", strconv.Itoa(cfg.TrainingHours.YearlyTarget)})
+	rows = append(rows, table.Row{"  Category", cfg.TrainingHours.Category})
+
+	// Vacation Hours Configuration
+	rows = append(rows, table.Row{"Vacation Hours", ""})
+	rows = append(rows, table.Row{"  Yearly Target", strconv.Itoa(cfg.VacationHours.YearlyTarget)})
+	rows = append(rows, table.Row{"  Category", cfg.VacationHours.Category})
+
+	return rows, apiModeRowIdx
+}
+
+// checkForUpdates checks GitHub for new releases
+func (m ConfigModel) checkForUpdates() tea.Msg {
+	checkMutex.Lock()
+	defer checkMutex.Unlock()
+
+	// Return cached result if checked within last hour
+	if time.Since(lastCheckTime) < time.Hour && cachedResult.latestVersion != "" {
+		return cachedResult
+	}
+
+	// Perform actual check
+	checker := updater.NewUpdateChecker("joelgrimberg", "timesheetz")
+	latest, available, err := checker.CheckForUpdate(version.Version)
+
+	result := updateCheckResultMsg{
+		latestVersion:   latest,
+		updateAvailable: available,
+		err:             err,
+	}
+
+	// Cache successful results
+	if err == nil {
+		cachedResult = result
+		lastCheckTime = time.Now()
+	}
+
+	return result
+}
+
 func (m ConfigModel) Init() tea.Cmd {
-	return nil
+	// Trigger update check when config tab loads
+	return m.checkForUpdates
 }
 
 func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+
+	// Handle update check result
+	if resultMsg, ok := msg.(updateCheckResultMsg); ok {
+		m.checkingUpdate = false
+		if resultMsg.err != nil {
+			// Silent failure - just store error for debugging
+			m.updateCheckErr = resultMsg.err
+		} else {
+			m.latestVersion = resultMsg.latestVersion
+			m.updateAvailable = resultMsg.updateAvailable
+		}
+		// Rebuild the table with new version string
+		cfg, err := config.GetConfig()
+		if err == nil {
+			rows, _ := m.buildTableRows(&cfg)
+			m.table.SetRows(rows)
+		}
+		return m, nil
+	}
 
 	// If overlay is active, update the foreground (modal) model
 	// The overlay library only handles rendering, not state updates
