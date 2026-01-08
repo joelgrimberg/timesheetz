@@ -11,7 +11,7 @@ class Timesheetz < Formula
   on_macos do
     if Hardware::CPU.intel?
       url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.25.1/timesheetz_Darwin_x86_64.tar.gz"
-      sha256 "a3891ac213cc01e48dddcfd0e44510988db8acb2eeab24d5033e8b572d63ffca"
+      sha256 "75bd8f4aaf66693d7a590bd1d2fcc638150e5fad75e4d9e894cbf65dc75f2cc3"
 
       def install
         bin.install "timesheet" => "timesheetz"
@@ -19,7 +19,7 @@ class Timesheetz < Formula
     end
     if Hardware::CPU.arm?
       url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.25.1/timesheetz_Darwin_arm64.tar.gz"
-      sha256 "443e266d144077fc58a6ff61940b15fe9f769a35f9f97ad8acafc287c85e4f5d"
+      sha256 "31431955d6211ec440b4475ea487ef759899acd0b4cea6391e9c169f7c923339"
 
       def install
         bin.install "timesheet" => "timesheetz"
@@ -30,14 +30,14 @@ class Timesheetz < Formula
   on_linux do
     if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
       url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.25.1/timesheetz_Linux_x86_64.tar.gz"
-      sha256 "aa854d8dfa7d7effcfe161b435664d518d87e85fa8ef747e6f4bb773fdb7ee7d"
+      sha256 "d8f1f727dd214f0adfcb4f32f9fb6f8fd2dff5c5c9c224915b1bdc42c05fb9ea"
       def install
         bin.install "timesheet" => "timesheetz"
       end
     end
     if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
       url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.25.1/timesheetz_Linux_arm64.tar.gz"
-      sha256 "9cdd00367b6895e9c5b1b5bf062be7309ef2a99ebfb9c6f66237bf1108ccfeb3"
+      sha256 "e49b9a7265c940ffef329b4f1a35664e43a74bea94675b5878adfb54faaea759"
       def install
         bin.install "timesheet" => "timesheetz"
       end
