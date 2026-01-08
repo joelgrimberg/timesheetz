@@ -63,30 +63,22 @@ func (m TrainingBudgetFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "enter":
-			// If we're on the last input field, submit the form
-			if m.focusIndex == len(m.inputs)-1 {
-				// Submit the form
-				entry := db.TrainingBudgetEntry{
-					Date:             m.inputs[0].Value(),
-					Training_name:    m.inputs[1].Value(),
-					Hours:            0,
-					Cost_without_vat: parseTrainingCost(m.inputs[2].Value()),
-				}
-
-				dataLayer := datalayer.GetDataLayer()
-				if err := dataLayer.AddTrainingBudgetEntry(entry); err != nil {
-					m.err = err
-					return m, nil
-				}
-
-				// Return to training budget view
-				return m, func() tea.Msg {
-					return ReturnToTimesheetMsg{}
-				}
+			// Submit the form
+			entry := db.TrainingBudgetEntry{
+				Date:             m.inputs[0].Value(),
+				Training_name:    m.inputs[1].Value(),
+				Hours:            0,
+				Cost_without_vat: parseTrainingCost(m.inputs[2].Value()),
 			}
 
-			// Move to next input
-			m.nextInput()
+			dataLayer := datalayer.GetDataLayer()
+			if err := dataLayer.AddTrainingBudgetEntry(entry); err != nil {
+				m.err = err
+				return m, nil
+			}
+
+			// Return to training budget view
+			return m, ReturnToTrainingBudget()
 		case "tab":
 			// Move to next input
 			m.nextInput()
@@ -109,9 +101,7 @@ func (m TrainingBudgetFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "esc":
 			// Return to training budget view
-			return m, func() tea.Msg {
-				return ReturnToTimesheetMsg{}
-			}
+			return m, ReturnToTrainingBudget()
 		}
 
 		// Handle other key presses

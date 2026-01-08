@@ -278,11 +278,6 @@ func (m FormModel) handleSubmit() tea.Cmd {
 	}
 
 	clientName := m.inputs[clientField].Value()
-	if clientName == "" {
-		return func() tea.Msg {
-			return errMsg(fmt.Errorf("client name is required"))
-		}
-	}
 
 	// Validate and parse hours
 	clientHours, err := parseHours(m.inputs[clientHoursField].Value())
@@ -329,6 +324,25 @@ func (m FormModel) handleSubmit() tea.Cmd {
 
 	// Calculate total hours
 	totalHours := clientHours + trainingHours + vacationHours + idleHours + holidayHours + sickHours
+
+	// Validate that at least some hours are entered
+	if totalHours == 0 {
+		return func() tea.Msg {
+			return errMsg(fmt.Errorf("at least one hour field must be filled"))
+		}
+	}
+
+	// If client hours are specified but no client name, require client name
+	if clientHours > 0 && clientName == "" {
+		return func() tea.Msg {
+			return errMsg(fmt.Errorf("client name is required when client hours are specified"))
+		}
+	}
+
+	// Use default client name for non-client hours entries
+	if clientName == "" {
+		clientName = "-"
+	}
 
 	// Save to database
 	entry := db.TimesheetEntry{

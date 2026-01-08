@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 	"timesheet/internal/datalayer"
@@ -130,6 +129,7 @@ type TrainingBudgetModel struct {
 	keys        TrainingBudgetKeyMap
 	help        help.Model
 	showHelp    bool
+	entries     []db.TrainingBudgetEntry // Store entries to access IDs
 }
 
 // RefreshTrainingBudgetMsg is sent when the training budget should be refreshed
@@ -256,6 +256,7 @@ func InitialTrainingBudgetModel() TrainingBudgetModel {
 		keys:        DefaultTrainingBudgetKeyMap(),
 		help:        help.New(),
 		showHelp:    false,
+		entries:     entries,
 	}
 }
 
@@ -276,6 +277,9 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			return m, tea.Printf("Error: %v", err)
 		}
+
+		// Store entries in model
+		m.entries = entries
 
 		// Convert entries to table rows
 		var rows []table.Row
@@ -319,21 +323,15 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Add):
 			return m, m.addEntryCmd()
 		case key.Matches(msg, m.keys.Clear):
-			if m.table.Cursor() < len(m.table.Rows())-1 { // Don't allow clearing the total row
-				row := m.table.SelectedRow()
-				if len(row) > 0 {
-					// Get the date from the row
-					date := row[0]
-
-					// Get the entry from the database using the date
-					dataLayer := datalayer.GetDataLayer()
-					entry, err := dataLayer.GetTrainingBudgetEntryByDate(date)
-					if err != nil {
-						return m, tea.Printf("Error finding entry: %v", err)
-					}
+			cursorPos := m.table.Cursor()
+			if cursorPos < len(m.table.Rows())-1 { // Don't allow clearing the total row
+				// Use cursor position to get the entry ID from stored entries
+				if cursorPos >= 0 && cursorPos < len(m.entries) {
+					entryID := m.entries[cursorPos].Id
 
 					// Delete the entry using its ID
-					if err := dataLayer.DeleteTrainingBudgetEntry(entry.Id); err != nil {
+					dataLayer := datalayer.GetDataLayer()
+					if err := dataLayer.DeleteTrainingBudgetEntry(entryID); err != nil {
 						return m, tea.Printf("Error deleting entry: %v", err)
 					}
 
@@ -342,6 +340,9 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err != nil {
 						return m, tea.Printf("Error refreshing entries: %v", err)
 					}
+
+					// Store updated entries in model
+					m.entries = entries
 
 					// Convert entries to table rows
 					var rows []table.Row
@@ -380,20 +381,11 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case key.Matches(msg, m.keys.Yank):
-			if m.table.Cursor() < len(m.table.Rows())-1 { // Don't allow yanking the total row
-				row := m.table.SelectedRow()
-				if len(row) > 0 {
-					// Get the ID from the row data
-					id, err := strconv.Atoi(row[0])
-					if err != nil {
-						return m, nil
-					}
-					dataLayer := datalayer.GetDataLayer()
-					entry, err := dataLayer.GetTrainingBudgetEntry(id)
-					if err != nil {
-						// Handle error
-						return m, nil
-					}
+			cursorPos := m.table.Cursor()
+			if cursorPos < len(m.table.Rows())-1 { // Don't allow yanking the total row
+				// Use cursor position to get the entry from stored entries
+				if cursorPos >= 0 && cursorPos < len(m.entries) {
+					entry := m.entries[cursorPos]
 
 					// Create a custom struct for yanking that excludes hours and id
 					type yankData struct {

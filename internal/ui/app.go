@@ -360,7 +360,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check for special message to return to training budget mode
 		if _, ok := msg.(ReturnToTrainingBudgetMsg); ok {
 			m.ActiveMode = TrainingBudgetMode
-			return m, nil
+			// Refresh the training budget model to show the new entry
+			m.TrainingBudgetModel = InitialTrainingBudgetModel()
+			return m, m.TrainingBudgetModel.Init()
 		}
 
 		// Update training budget form model
