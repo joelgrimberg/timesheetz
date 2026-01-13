@@ -192,6 +192,11 @@ func (m FormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+			// Update autocomplete suggestion when entering the client field
+			if m.focused == clientField {
+				m.updateAutocompleteSuggestion()
+			}
+
 			return m, tea.Batch(cmds...)
 		}
 	}
@@ -236,14 +241,15 @@ func (m FormModel) View() string {
 
 			// Manually construct the view with inline suggestion
 			greyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+			cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 
 			// Render: prompt + typed text + cursor + grey suggestion
 			prompt := input.PromptStyle.Render("> ")
 			styledTypedText := input.TextStyle.Render(typedText)
-			cursor := input.Cursor.View()
+			cursor := cursorStyle.Render("│")
 			greySuggestion := greyStyle.Render(suggestionRemaining)
 
-			s += prompt + styledTypedText + cursor + greySuggestion + "\n\n"
+			s += prompt + styledTypedText + cursor + greySuggestion + " (Tab to accept)\n\n"
 		} else {
 			s += input.View() + "\n\n"
 		}
@@ -423,9 +429,13 @@ func parseHours(input string) (int, error) {
 func (m *FormModel) updateAutocompleteSuggestion() {
 	typedText := m.inputs[clientField].Value()
 
-	// Clear suggestion if nothing is typed
+	// If nothing is typed, show the first active client as suggestion
 	if typedText == "" {
-		m.currentSuggestion = ""
+		if len(m.activeClients) > 0 {
+			m.currentSuggestion = m.activeClients[0].Name
+		} else {
+			m.currentSuggestion = ""
+		}
 		return
 	}
 
