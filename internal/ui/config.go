@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rmhubbert/bubbletea-overlay"
@@ -113,6 +114,85 @@ type ModeModalModel struct {
 	keys   ConfigKeyMap
 }
 
+// TextInputModal represents a modal for editing text fields
+type TextInputModal struct {
+	textInput textinput.Model
+	fieldName string
+	keys      ConfigKeyMap
+}
+
+// InitialTextInputModal creates a new text input modal
+func InitialTextInputModal(fieldName, currentValue string) *TextInputModal {
+	ti := textinput.New()
+	ti.SetValue(currentValue)
+	ti.Focus()
+	ti.CharLimit = 50
+	ti.Width = 50
+	ti.Prompt = "> "
+	return &TextInputModal{
+		textInput: ti,
+		fieldName: fieldName,
+		keys:      DefaultConfigKeyMap(),
+	}
+}
+
+func (m TextInputModal) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+// TextInputSavedMsg is sent when text input is confirmed
+type TextInputSavedMsg struct {
+	FieldName string
+	Value     string
+}
+
+// TextInputCancelledMsg is sent when text input modal is cancelled
+type TextInputCancelledMsg struct{}
+
+func (m TextInputModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyEsc:
+			return m, func() tea.Msg {
+				return TextInputCancelledMsg{}
+			}
+		case tea.KeyEnter:
+			return m, func() tea.Msg {
+				return TextInputSavedMsg{
+					FieldName: m.fieldName,
+					Value:     m.textInput.Value(),
+				}
+			}
+		}
+	}
+
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
+func (m TextInputModal) View() string {
+	var modalRows []string
+	modalRows = append(modalRows, lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("Edit %s:", m.fieldName)))
+	modalRows = append(modalRows, "")
+	modalRows = append(modalRows, m.textInput.View())
+	modalRows = append(modalRows, "")
+	modalRows = append(modalRows, lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render("Enter: Save • Esc: Cancel"))
+
+	modalContent := lipgloss.JoinVertical(lipgloss.Left, modalRows...)
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Width(60).
+		Render(modalContent)
+}
+
 // ConfigModel represents the configuration view
 type ConfigModel struct {
 	table         table.Model
@@ -121,14 +201,22 @@ type ConfigModel struct {
 	showHelp      bool
 	showModeModal bool
 	modeModal     *ModeModalModel
+	textModal     *TextInputModal
 	overlay       *overlay.Model
 	apiModeRowIdx int // Index of the "API Mode" row in the table
+	nameRowIdx    int // Index of the "Name" row in the table
+	companyRowIdx int // Index of the "Company Name" row in the table
 
 	// Update checking fields
 	latestVersion   string
 	updateAvailable bool
 	checkingUpdate  bool
 	updateCheckErr  error
+}
+
+// IsEditing returns true if a modal is active (text input or mode selection)
+func (m ConfigModel) IsEditing() bool {
+	return m.textModal != nil || m.overlay != nil
 }
 
 // InitialConfigModel creates a new config model
@@ -176,7 +264,7 @@ func InitialConfigModel() ConfigModel {
 	// Convert config to table rows using buildTableRows
 	// We need to create a temporary model to call buildTableRows
 	tempModel := ConfigModel{}
-	rows, apiModeRowIdx := tempModel.buildTableRows(&cfg)
+	rows, indices := tempModel.buildTableRows(&cfg)
 
 	t.SetRows(rows)
 
@@ -192,8 +280,11 @@ func InitialConfigModel() ConfigModel {
 		showHelp:      false,
 		showModeModal: false,
 		modeModal:     nil,
+		textModal:     nil,
 		overlay:       nil,
-		apiModeRowIdx: apiModeRowIdx,
+		apiModeRowIdx: indices.apiModeRowIdx,
+		nameRowIdx:    indices.nameRowIdx,
+		companyRowIdx: indices.companyRowIdx,
 	}
 }
 
@@ -318,9 +409,17 @@ func maskAPIKey(key string) string {
 	return key[:4] + "..." + key[len(key)-4:]
 }
 
+// configRowIndices holds the row indices for editable fields
+type configRowIndices struct {
+	nameRowIdx    int
+	companyRowIdx int
+	apiModeRowIdx int
+}
+
 // buildTableRows builds the configuration table rows with update info
-func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, int) {
+func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowIndices) {
 	var rows []table.Row
+	var indices configRowIndices
 
 	// Version Information with update check
 	versionValue := version.Version
@@ -343,7 +442,9 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, int) {
 
 	// User Information
 	rows = append(rows, table.Row{"User Information", ""})
+	indices.nameRowIdx = len(rows)
 	rows = append(rows, table.Row{"  Name", cfg.Name})
+	indices.companyRowIdx = len(rows)
 	rows = append(rows, table.Row{"  Company Name", cfg.CompanyName})
 	rows = append(rows, table.Row{"  Free Speech", cfg.FreeSpeech})
 
@@ -354,7 +455,7 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, int) {
 
 	// API Client Configuration
 	rows = append(rows, table.Row{"API Client", ""})
-	apiModeRowIdx := len(rows) // Store the index of the API Mode row (after "API Client" header)
+	indices.apiModeRowIdx = len(rows)
 	if cfg.APIMode == "" {
 		rows = append(rows, table.Row{"  API Mode", "local (default)"})
 	} else {
@@ -406,7 +507,7 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, int) {
 	rows = append(rows, table.Row{"  Yearly Target", strconv.Itoa(cfg.VacationHours.YearlyTarget)})
 	rows = append(rows, table.Row{"  Category", cfg.VacationHours.Category})
 
-	return rows, apiModeRowIdx
+	return rows, indices
 }
 
 // checkForUpdates checks GitHub for new releases
@@ -446,6 +547,42 @@ func (m ConfigModel) Init() tea.Cmd {
 func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// Handle text input modal FIRST - capture all input when modal is active
+	if m.textModal != nil {
+		// Check for save/cancel messages
+		if saveMsg, ok := msg.(TextInputSavedMsg); ok {
+			cfg, err := config.GetConfig()
+			if err == nil {
+				switch saveMsg.FieldName {
+				case "Name":
+					cfg.Name = saveMsg.Value
+				case "Company Name":
+					cfg.CompanyName = saveMsg.Value
+				}
+				config.SaveConfig(cfg)
+				// Rebuild the table with updated values
+				rows, _ := m.buildTableRows(&cfg)
+				m.table.SetRows(rows)
+			}
+			m.textModal = nil
+			return m, nil
+		}
+
+		if _, ok := msg.(TextInputCancelledMsg); ok {
+			m.textModal = nil
+			return m, nil
+		}
+
+		// Pass all other messages to the text modal
+		updatedForeground, foregroundCmd := m.textModal.Update(msg)
+		if updatedModal, ok := updatedForeground.(TextInputModal); ok {
+			m.textModal = &updatedModal
+		} else if updatedModalPtr, ok := updatedForeground.(*TextInputModal); ok {
+			m.textModal = updatedModalPtr
+		}
+		return m, foregroundCmd
+	}
+
 	// Handle update check result
 	if resultMsg, ok := msg.(updateCheckResultMsg); ok {
 		m.checkingUpdate = false
@@ -465,10 +602,8 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// If overlay is active, update the foreground (modal) model
-	// The overlay library only handles rendering, not state updates
-	if m.overlay != nil {
-		// Update the foreground (modal) model
+	// Handle mode modal updates (using overlay)
+	if m.overlay != nil && m.modeModal != nil {
 		updatedForeground, foregroundCmd := m.modeModal.Update(msg)
 		if updatedModal, ok := updatedForeground.(ModeModalModel); ok {
 			m.modeModal = &updatedModal
@@ -498,14 +633,27 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Enter):
+			cursor := m.table.Cursor()
+			cfg, err := config.GetConfig()
+			if err != nil {
+				return m, nil
+			}
+
+			// Check if we're on the Name row
+			if cursor == m.nameRowIdx {
+				m.textModal = InitialTextInputModal("Name", cfg.Name)
+				return m, m.textModal.Init()
+			}
+
+			// Check if we're on the Company Name row
+			if cursor == m.companyRowIdx {
+				m.textModal = InitialTextInputModal("Company Name", cfg.CompanyName)
+				return m, m.textModal.Init()
+			}
+
 			// Check if we're on the API Mode row
-			if m.table.Cursor() == m.apiModeRowIdx {
-				// Get current mode
-				cfg, err := config.GetConfig()
-				currentMode := ""
-				if err == nil {
-					currentMode = cfg.APIMode
-				}
+			if cursor == m.apiModeRowIdx {
+				currentMode := cfg.APIMode
 
 				// Create modal
 				m.modeModal = InitialModeModalModel(currentMode)
@@ -547,7 +695,16 @@ func (m ConfigModel) View() string {
 	} else {
 		helpView = "\n" + lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")).
-			Render("↑/↓: Navigate • ?: Help • q: Quit • </>: Tabs")
+			Render("↑/↓: Navigate • Enter: Edit • ?: Help • q: Quit • </>: Tabs")
+	}
+
+	// If text modal is active, show only the modal
+	if m.textModal != nil {
+		return fmt.Sprintf(
+			"%s\n\n%s",
+			titleStyle.Render("Configuration"),
+			m.textModal.View(),
+		)
 	}
 
 	content := fmt.Sprintf(
@@ -561,7 +718,7 @@ func (m ConfigModel) View() string {
 		m.help.View(m.keys),
 	)
 
-	// If overlay is active, use it to render
+	// If overlay is active (mode modal), use it to render
 	if m.overlay != nil {
 		return m.overlay.View()
 	}

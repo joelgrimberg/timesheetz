@@ -140,8 +140,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		// Only handle special keys when not in form modes or client form/modal
-		if m.ActiveMode != FormMode && m.ActiveMode != TrainingBudgetFormMode && m.ActiveMode != ClientFormMode && m.ActiveMode != ClientRatesModalMode {
+		// Only handle special keys when not in form modes or client form/modal or config editing
+		configEditing := m.ActiveMode == ConfigMode && m.ConfigModel.IsEditing()
+		if m.ActiveMode != FormMode && m.ActiveMode != TrainingBudgetFormMode && m.ActiveMode != ClientFormMode && m.ActiveMode != ClientRatesModalMode && !configEditing {
 			// Handle tab switching
 			switch keyMsg.String() {
 			case "<":

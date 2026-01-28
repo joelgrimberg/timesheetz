@@ -65,6 +65,7 @@ type TimesheetKeyMap struct {
 	PasteEntry  key.Binding
 	Print       key.Binding
 	SendAsEmail key.Binding
+	ExportExcel key.Binding
 }
 
 // Default keybindings for the timesheet view
@@ -130,6 +131,9 @@ func DefaultTimesheetKeyMap() TimesheetKeyMap {
 		SendAsEmail: key.NewBinding(
 			key.WithKeys("S"),
 			key.WithHelp("S", "email timesheet")),
+		ExportExcel: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "export to Excel")),
 	}
 }
 
@@ -167,7 +171,7 @@ func (k TimesheetKeyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.Left, k.Right, k.JumpUp, k.JumpDown},                            // first column
 		{k.PrevMonth, k.NextMonth},                                                       // second column - month navigation
 		{k.GotoToday, k.Enter, k.AddEntry, k.ClearEntry},                                 // third column
-		{k.YankEntry, k.MoveEntry, k.PasteEntry, k.Print, k.SendAsEmail, k.Help, k.Quit}, // fourth column
+		{k.YankEntry, k.MoveEntry, k.PasteEntry, k.Print, k.ExportExcel, k.SendAsEmail, k.Help, k.Quit}, // fourth column
 		{
 			key.NewBinding(
 				key.WithKeys("<"),
@@ -331,6 +335,31 @@ func hasYankableData(row []string) bool {
 	return row[2] != "-"
 }
 
+func exportToExcel(year int, month time.Month) (string, error) {
+	dataLayer := datalayer.GetDataLayer()
+	entries, err := dataLayer.GetAllTimesheetEntries(year, month)
+	if err != nil {
+		return "", fmt.Errorf("error fetching timesheet entries: %v", err)
+	}
+
+	var timesheetRows []printExcel.TimesheetRow
+	for _, entry := range entries {
+		row := printExcel.TimesheetRow{
+			Date:          entry.Date,
+			ClientName:    entry.Client_name,
+			ClientHours:   float64(entry.Client_hours),
+			TrainingHours: float64(entry.Training_hours),
+			VacationHours: float64(entry.Vacation_hours),
+			IdleHours:     float64(entry.Idle_hours),
+			HolidayHours:  float64(entry.Holiday_hours),
+			SickHours:     float64(entry.Sick_hours),
+		}
+		timesheetRows = append(timesheetRows, row)
+	}
+
+	return printExcel.TimesheetToExcel(timesheetRows, year, month)
+}
+
 func sendDocument(content string, sendAsEmail bool, year int, month time.Month) (string, error) {
 	format := config.GetDocumentType()
 
@@ -359,11 +388,7 @@ func sendDocument(content string, sendAsEmail bool, year int, month time.Month) 
 		}
 
 		// Export to Excel
-		if err := printExcel.TimesheetToExcel(timesheetRows); err != nil {
-			return "", err
-		}
-
-		return "Timesheet.xlsx", nil
+		return printExcel.TimesheetToExcel(timesheetRows, year, month)
 	} else {
 		return printPDF.TimesheetToPDF(content, sendAsEmail)
 	}
@@ -441,6 +466,14 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Printf("Error printing timesheet: %v", err)
 			}
 			return m, tea.Printf("Timesheet saved to %s", filename)
+
+		case key.Matches(msg, m.keys.ExportExcel):
+			// Export to Excel directly
+			filename, err := exportToExcel(m.currentYear, m.currentMonth)
+			if err != nil {
+				return m, tea.Printf("Error exporting to Excel: %v", err)
+			}
+			return m, tea.Printf("Timesheet exported to %s", filename)
 
 		case key.Matches(msg, m.keys.YankEntry):
 			// Get the selected row data
