@@ -449,10 +449,6 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m TrainingBudgetModel) View() string {
 	var s string
 
-	// Show the year as title
-	yearTitle := fmt.Sprintf("Training Budget %d", m.currentYear)
-	s += titleStyle.Render(yearTitle) + "\n"
-
 	// Get the table view
 	tableView := m.table.View()
 

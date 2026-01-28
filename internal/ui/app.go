@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
 	"time"
 	"timesheet/internal/config"
 	"timesheet/internal/datalayer"
@@ -31,6 +33,11 @@ const (
 // RefreshMsg is sent when the database is updated
 type RefreshMsg struct{}
 
+// ClearStatusMsg is sent after a timeout to clear the status message
+type ClearStatusMsg struct {
+	ID int
+}
+
 // AppModel is the top-level model that contains both timesheet and form models
 type AppModel struct {
 	OverviewModel           OverviewModel
@@ -48,6 +55,8 @@ type AppModel struct {
 	ActiveMode              AppMode
 	Help                    help.Model
 	refreshChan             chan RefreshMsg
+	statusMessage           string
+	statusMessageID         int
 }
 
 func NewAppModel(addMode bool) AppModel {
@@ -245,6 +254,29 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ClientsModel = InitialClientsModel()
 		m.EarningsModel = InitialEarningsModel()
 		m.ConfigModel = InitialConfigModel()
+		return m, nil
+	}
+
+	// Handle status message
+	if statusMsg, ok := msg.(SetStatusMsg); ok {
+		m.statusMessageID++
+		m.statusMessage = statusMsg.Message
+		if statusMsg.Message != "" {
+			// Start a timer to clear the message after 10 seconds
+			id := m.statusMessageID
+			return m, tea.Tick(10*time.Second, func(t time.Time) tea.Msg {
+				return ClearStatusMsg{ID: id}
+			})
+		}
+		return m, nil
+	}
+
+	// Handle clear status message
+	if clearMsg, ok := msg.(ClearStatusMsg); ok {
+		// Only clear if the ID matches (no newer message was set)
+		if clearMsg.ID == m.statusMessageID {
+			m.statusMessage = ""
+		}
 		return m, nil
 	}
 
@@ -456,6 +488,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.ConfigModel.apiModeRowIdx < len(m.ConfigModel.table.Rows()) {
 				m.ConfigModel.table.SetCursor(m.ConfigModel.apiModeRowIdx)
 			}
+			m.statusMessage = "Configuration saved"
 			return m, nil
 		case ModeCancelledMsg:
 			// Just refresh config model to close modal and ensure cursor is on API Mode row
@@ -475,6 +508,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.ConfigModel.exportLangRowIdx < len(m.ConfigModel.table.Rows()) {
 				m.ConfigModel.table.SetCursor(m.ConfigModel.exportLangRowIdx)
 			}
+			m.statusMessage = "Configuration saved"
 			return m, nil
 		case LanguageCancelledMsg:
 			m.ConfigModel = InitialConfigModel()
@@ -498,7 +532,7 @@ func (m AppModel) View() string {
 	tabs := []string{"Timesheet", "Overview", "Training", "Training Budget", "Vacation", "Clients", "Earnings", "Config"}
 	// Map tab names to their corresponding modes
 	tabModes := []AppMode{TimesheetMode, OverviewMode, TrainingMode, TrainingBudgetMode, VacationMode, ClientsMode, EarningsMode, ConfigMode}
-	
+
 	for i, t := range tabs {
 		var style lipgloss.Style
 		if tabModes[i] == m.ActiveMode {
@@ -511,6 +545,49 @@ func (m AppModel) View() string {
 
 	// Join tabs horizontally
 	row := lipgloss.JoinHorizontal(lipgloss.Top, renderedTabs...)
+	tabsWidth := lipgloss.Width(row)
+
+	// Create status bar title based on active mode
+	var statusTitle string
+	switch m.ActiveMode {
+	case TimesheetMode, FormMode:
+		statusTitle = fmt.Sprintf("%s %d", m.TimesheetModel.currentMonth.String(), m.TimesheetModel.currentYear)
+	case OverviewMode:
+		statusTitle = fmt.Sprintf("Overview %d", m.OverviewModel.currentYear)
+	case TrainingMode:
+		statusTitle = fmt.Sprintf("Training %d", m.TrainingModel.currentYear)
+	case TrainingBudgetMode, TrainingBudgetFormMode:
+		statusTitle = fmt.Sprintf("Training Budget %d", m.TrainingBudgetModel.currentYear)
+	case VacationMode:
+		statusTitle = fmt.Sprintf("Vacation %d", m.VacationModel.currentYear)
+	case EarningsMode:
+		if m.EarningsModel.currentMonth > 0 {
+			monthName := time.Month(m.EarningsModel.currentMonth).String()
+			statusTitle = fmt.Sprintf("%s %d", monthName, m.EarningsModel.currentYear)
+		} else {
+			statusTitle = fmt.Sprintf("Earnings %d", m.EarningsModel.currentYear)
+		}
+	case ClientsMode, ClientFormMode, ClientRatesModalMode:
+		statusTitle = "Clients"
+	case ConfigMode:
+		statusTitle = "Config"
+	default:
+		statusTitle = ""
+	}
+	statusMsg := m.statusMessage
+
+	// Calculate padding to align status message to the right
+	leftWidth := lipgloss.Width(statusBarTitleStyle.Render(statusTitle))
+	rightWidth := lipgloss.Width(statusMessageStyle.Render(statusMsg))
+	paddingWidth := tabsWidth - leftWidth - rightWidth - 4 // -4 for border padding
+	if paddingWidth < 1 {
+		paddingWidth = 1
+	}
+	padding := strings.Repeat(" ", paddingWidth)
+
+	// Render status bar content
+	statusBarContent := statusBarTitleStyle.Render(statusTitle) + padding + statusMessageStyle.Render(statusMsg)
+	statusBar := statusBarStyle.Width(tabsWidth).Render(statusBarContent)
 
 	// Render the current view
 	var content string
@@ -541,8 +618,8 @@ func (m AppModel) View() string {
 		content = m.TrainingBudgetFormModel.View()
 	}
 
-	// Combine tabs and content
-	return lipgloss.JoinVertical(lipgloss.Left, row, content)
+	// Combine tabs, status bar, and content
+	return lipgloss.JoinVertical(lipgloss.Left, row, statusBar, content)
 }
 
 // GetRefreshChan returns the refresh channel

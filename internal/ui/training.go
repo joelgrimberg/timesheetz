@@ -320,8 +320,7 @@ func (m TrainingModel) View() string {
 	}
 
 	return fmt.Sprintf(
-		"%s\n%s\n%s%s",
-		titleStyle.Render(fmt.Sprintf("Training %d", m.currentYear)),
+		"%s\n%s%s",
 		lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("240")).

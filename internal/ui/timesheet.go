@@ -223,6 +223,18 @@ type ChangeMonthMsg struct {
 	Preserve   bool   // Whether to preserve cursor position
 }
 
+// SetStatusMsg is used to set the status message from outside the timesheet
+type SetStatusMsg struct {
+	Message string
+}
+
+// SetStatus returns a command that sets the status message
+func SetStatus(message string) tea.Cmd {
+	return func() tea.Msg {
+		return SetStatusMsg{Message: message}
+	}
+}
+
 // Command to change the month with optional date selection
 func ChangeMonth(year int, month time.Month, selectDate string) tea.Cmd {
 	return func() tea.Msg {
@@ -438,7 +450,8 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		return m, nil
+		// Clear status message on month change
+		return m, SetStatus("")
 
 	case tea.KeyMsg:
 		switch {
@@ -471,9 +484,9 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Export to Excel directly
 			filename, err := exportToExcel(m.currentYear, m.currentMonth)
 			if err != nil {
-				return m, tea.Printf("Error exporting to Excel: %v", err)
+				return m, SetStatus(fmt.Sprintf("Error: %v", err))
 			}
-			return m, tea.Printf("Timesheet exported to %s", filename)
+			return m, SetStatus(fmt.Sprintf("Exported to %s", filename))
 
 		case key.Matches(msg, m.keys.YankEntry):
 			// Get the selected row data
@@ -660,10 +673,6 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m TimesheetModel) View() string {
 	var s string
-
-	// Show the month and year as title
-	monthYearTitle := fmt.Sprintf("%s %d", m.currentMonth.String(), m.currentYear)
-	s += titleStyle.Render(monthYearTitle) + "\n"
 
 	// Get the table view
 	tableView := m.table.View()

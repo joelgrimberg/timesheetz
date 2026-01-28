@@ -224,8 +224,7 @@ func (m OverviewModel) View() string {
 		Padding(2, 4).
 		Render(
 			fmt.Sprintf(
-				"%s\n\n%s\n%s\n\n%s\n%s",
-				lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render("Overview "+fmt.Sprintf("%d", m.currentYear)),
+				"%s\n%s\n\n%s\n%s",
 				lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Training Hours Remaining:"),
 				lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("  %d hours", m.trainingHoursLeft)),
 				lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Vacation Hours Remaining:"),
@@ -234,8 +233,7 @@ func (m OverviewModel) View() string {
 		)
 
 	return fmt.Sprintf(
-		"%s\n%s\n%s%s",
-		titleStyle.Render(fmt.Sprintf("Overview %d", m.currentYear)),
+		"%s\n%s%s",
 		content,
 		helpStyle.Render("←/→: Change year • <: Prev tab • >: Next tab • q: Quit"),
 		helpView,

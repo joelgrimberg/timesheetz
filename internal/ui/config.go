@@ -683,7 +683,7 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.table.SetRows(rows)
 			}
 			m.textModal = nil
-			return m, nil
+			return m, SetStatus("Configuration saved")
 		}
 
 		if _, ok := msg.(TextInputCancelledMsg); ok {
@@ -854,16 +854,11 @@ func (m ConfigModel) View() string {
 
 	// If text modal is active, show only the modal
 	if m.textModal != nil {
-		return fmt.Sprintf(
-			"%s\n\n%s",
-			titleStyle.Render("Configuration"),
-			m.textModal.View(),
-		)
+		return m.textModal.View()
 	}
 
 	content := fmt.Sprintf(
-		"%s\n%s\n%s%s",
-		titleStyle.Render("Configuration"),
+		"%s\n%s%s",
 		lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("240")).

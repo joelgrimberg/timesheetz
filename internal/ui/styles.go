@@ -21,4 +21,9 @@ var (
 	infoStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("87"))             // Light blue for info text
 	tableHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")) // Pink for table headers
 	tableRowStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))            // White for table rows
+	statusBarStyle   = lipgloss.NewStyle().
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderForeground(lipgloss.Color("240"))
+	statusBarTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")) // Same as titleStyle but no margin
+	statusMessageStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))             // Green for status messages
 )

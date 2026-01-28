@@ -406,8 +406,7 @@ func (m VacationModel) View() string {
 	summarySection := lipgloss.JoinHorizontal(lipgloss.Top, summaryBox, "  ", remainingBox)
 
 	return fmt.Sprintf(
-		"%s\n%s\n\n%s\n\n%s%s",
-		titleStyle.Render(fmt.Sprintf("Vacation %d", m.currentYear)),
+		"%s\n\n%s\n\n%s%s",
 		lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("240")).

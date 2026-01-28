@@ -391,20 +391,6 @@ func (m EarningsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m EarningsModel) View() string {
 	var s string
 
-	// Title
-	var title string
-	if m.monthlyView {
-		monthName := time.Month(m.currentMonth).String()
-		title = fmt.Sprintf("Earnings Overview - %s %d", monthName, m.currentYear)
-	} else {
-		if m.summaryMode {
-			title = fmt.Sprintf("Earnings Overview - %d (Summary)", m.currentYear)
-		} else {
-			title = fmt.Sprintf("Earnings Overview - %d (Detailed)", m.currentYear)
-		}
-	}
-	s += titleStyle.Render(title) + "\n"
-
 	// Table view
 	tableView := m.table.View()
 	s += baseStyle.Render(tableView) + "\n"

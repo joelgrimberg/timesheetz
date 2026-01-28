@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 	"timesheet/internal/datalayer"
@@ -368,14 +367,6 @@ func (m ClientsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m ClientsModel) View() string {
 	var s string
-
-	// Title
-	filterText := "All Clients"
-	if m.showActive {
-		filterText = "Active Clients"
-	}
-	title := fmt.Sprintf("Client Management - %s", filterText)
-	s += titleStyle.Render(title) + "\n"
 
 	// Table view
 	tableView := m.table.View()
