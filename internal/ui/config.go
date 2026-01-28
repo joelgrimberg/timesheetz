@@ -195,17 +195,19 @@ func (m TextInputModal) View() string {
 
 // ConfigModel represents the configuration view
 type ConfigModel struct {
-	table         table.Model
-	keys          ConfigKeyMap
-	help          help.Model
-	showHelp      bool
-	showModeModal bool
-	modeModal     *ModeModalModel
-	textModal     *TextInputModal
-	overlay       *overlay.Model
-	apiModeRowIdx int // Index of the "API Mode" row in the table
-	nameRowIdx    int // Index of the "Name" row in the table
-	companyRowIdx int // Index of the "Company Name" row in the table
+	table            table.Model
+	keys             ConfigKeyMap
+	help             help.Model
+	showHelp         bool
+	showModeModal    bool
+	modeModal        *ModeModalModel
+	languageModal    *LanguageModalModel
+	textModal        *TextInputModal
+	overlay          *overlay.Model
+	apiModeRowIdx    int // Index of the "API Mode" row in the table
+	nameRowIdx       int // Index of the "Name" row in the table
+	companyRowIdx    int // Index of the "Company Name" row in the table
+	exportLangRowIdx int // Index of the "Export Language" row in the table
 
 	// Update checking fields
 	latestVersion   string
@@ -216,7 +218,7 @@ type ConfigModel struct {
 
 // IsEditing returns true if a modal is active (text input or mode selection)
 func (m ConfigModel) IsEditing() bool {
-	return m.textModal != nil || m.overlay != nil
+	return m.textModal != nil || m.overlay != nil || m.languageModal != nil
 }
 
 // InitialConfigModel creates a new config model
@@ -282,9 +284,10 @@ func InitialConfigModel() ConfigModel {
 		modeModal:     nil,
 		textModal:     nil,
 		overlay:       nil,
-		apiModeRowIdx: indices.apiModeRowIdx,
-		nameRowIdx:    indices.nameRowIdx,
-		companyRowIdx: indices.companyRowIdx,
+		apiModeRowIdx:    indices.apiModeRowIdx,
+		nameRowIdx:       indices.nameRowIdx,
+		companyRowIdx:    indices.companyRowIdx,
+		exportLangRowIdx: indices.exportLangRowIdx,
 	}
 }
 
@@ -401,6 +404,114 @@ func (m ModeModalModel) View() string {
 		Render(modalContent)
 }
 
+// LanguageModalModel represents the modal for selecting export language
+type LanguageModalModel struct {
+	cursor int
+	keys   ConfigKeyMap
+}
+
+// LanguageSelectedMsg is sent when a language is selected
+type LanguageSelectedMsg struct {
+	Language string
+}
+
+// LanguageCancelledMsg is sent when language modal is cancelled
+type LanguageCancelledMsg struct{}
+
+func InitialLanguageModalModel(currentLang string) *LanguageModalModel {
+	if currentLang == "" {
+		currentLang = "en"
+	}
+	langCursor := 0
+	langs := []string{"en", "nl"}
+	for i, lang := range langs {
+		if lang == currentLang {
+			langCursor = i
+			break
+		}
+	}
+	return &LanguageModalModel{
+		cursor: langCursor,
+		keys:   DefaultConfigKeyMap(),
+	}
+}
+
+func (m LanguageModalModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m LanguageModalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Escape):
+			return m, func() tea.Msg {
+				return LanguageCancelledMsg{}
+			}
+		case key.Matches(msg, m.keys.Up):
+			m.cursor--
+			if m.cursor < 0 {
+				m.cursor = 1
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.Down):
+			m.cursor++
+			if m.cursor > 1 {
+				m.cursor = 0
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.Enter):
+			langs := []string{"en", "nl"}
+			return m, func() tea.Msg {
+				return LanguageSelectedMsg{Language: langs[m.cursor]}
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m LanguageModalModel) View() string {
+	langs := []string{"en", "nl"}
+	langDescriptions := []string{
+		"English",
+		"Nederlands (Dutch)",
+	}
+
+	var modalRows []string
+	modalRows = append(modalRows, lipgloss.NewStyle().Bold(true).Render("Select Export Language:"))
+	modalRows = append(modalRows, "")
+
+	for i, lang := range langs {
+		var style lipgloss.Style
+		if i == m.cursor {
+			style = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("229")).
+				Background(lipgloss.Color("57")).
+				Padding(0, 1)
+		} else {
+			style = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")).
+				Padding(0, 1)
+		}
+		row := fmt.Sprintf("  %s - %s", style.Render(lang), langDescriptions[i])
+		modalRows = append(modalRows, row)
+	}
+
+	modalRows = append(modalRows, "")
+	modalRows = append(modalRows, lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render("↑/↓: Select • Enter: Confirm • Esc: Cancel"))
+
+	modalContent := lipgloss.JoinVertical(lipgloss.Left, modalRows...)
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Width(60).
+		Render(modalContent)
+}
+
 // maskAPIKey masks the API key showing only first few and last few characters
 func maskAPIKey(key string) string {
 	if len(key) <= 8 {
@@ -411,9 +522,10 @@ func maskAPIKey(key string) string {
 
 // configRowIndices holds the row indices for editable fields
 type configRowIndices struct {
-	nameRowIdx    int
-	companyRowIdx int
-	apiModeRowIdx int
+	nameRowIdx       int
+	companyRowIdx    int
+	apiModeRowIdx    int
+	exportLangRowIdx int
 }
 
 // buildTableRows builds the configuration table rows with update info
@@ -482,6 +594,12 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 	// Document Settings
 	rows = append(rows, table.Row{"Document", ""})
 	rows = append(rows, table.Row{"  Send Document Type", cfg.SendDocumentType})
+	indices.exportLangRowIdx = len(rows)
+	exportLang := cfg.ExportLanguage
+	if exportLang == "" {
+		exportLang = "en (default)"
+	}
+	rows = append(rows, table.Row{"  Export Language", exportLang})
 
 	// Email Configuration
 	rows = append(rows, table.Row{"Email", ""})
@@ -602,6 +720,27 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle language modal updates (using overlay)
+	if m.overlay != nil && m.languageModal != nil {
+		updatedForeground, foregroundCmd := m.languageModal.Update(msg)
+		if updatedModal, ok := updatedForeground.(LanguageModalModel); ok {
+			m.languageModal = &updatedModal
+		} else if updatedModalPtr, ok := updatedForeground.(*LanguageModalModel); ok {
+			m.languageModal = updatedModalPtr
+		}
+
+		m.overlay = overlay.New(
+			m.languageModal,
+			m,
+			overlay.Center,
+			overlay.Center,
+			0,
+			0,
+		)
+
+		return m, foregroundCmd
+	}
+
 	// Handle mode modal updates (using overlay)
 	if m.overlay != nil && m.modeModal != nil {
 		updatedForeground, foregroundCmd := m.modeModal.Update(msg)
@@ -649,6 +788,21 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cursor == m.companyRowIdx {
 				m.textModal = InitialTextInputModal("Company Name", cfg.CompanyName)
 				return m, m.textModal.Init()
+			}
+
+			// Check if we're on the Export Language row
+			if cursor == m.exportLangRowIdx {
+				currentLang := cfg.ExportLanguage
+				m.languageModal = InitialLanguageModalModel(currentLang)
+				m.overlay = overlay.New(
+					m.languageModal,
+					m,
+					overlay.Center,
+					overlay.Center,
+					0,
+					0,
+				)
+				return m, nil
 			}
 
 			// Check if we're on the API Mode row

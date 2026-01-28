@@ -465,6 +465,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ConfigModel.table.SetCursor(m.ConfigModel.apiModeRowIdx)
 			}
 			return m, nil
+		case LanguageSelectedMsg:
+			cfg, err := config.GetConfig()
+			if err == nil {
+				cfg.ExportLanguage = msg.Language
+				config.SaveConfig(cfg)
+			}
+			m.ConfigModel = InitialConfigModel()
+			if m.ConfigModel.exportLangRowIdx < len(m.ConfigModel.table.Rows()) {
+				m.ConfigModel.table.SetCursor(m.ConfigModel.exportLangRowIdx)
+			}
+			return m, nil
+		case LanguageCancelledMsg:
+			m.ConfigModel = InitialConfigModel()
+			if m.ConfigModel.exportLangRowIdx < len(m.ConfigModel.table.Rows()) {
+				m.ConfigModel.table.SetCursor(m.ConfigModel.exportLangRowIdx)
+			}
+			return m, nil
 		}
 		// Update config model
 		configModel, cmd := m.ConfigModel.Update(msg)

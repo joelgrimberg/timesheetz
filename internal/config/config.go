@@ -53,6 +53,7 @@ type Config struct {
 
 	// Document Settings
 	SendDocumentType string `json:"sendDocumentType"`
+	ExportLanguage   string `json:"exportLanguage"` // "en" or "nl" (default: "en")
 
 	// Email Configuration
 	SendToOthers   bool   `json:"sendToOthers"`
@@ -181,6 +182,24 @@ func GetDocumentType() string {
 		return ""
 	}
 	return config.SendDocumentType
+}
+
+func GetExportLanguage() string {
+	configPath := GetConfigPath()
+	configFile, err := os.ReadFile(configPath)
+	if err != nil {
+		return "en"
+	}
+	var config struct {
+		ExportLanguage string `json:"exportLanguage"`
+	}
+	if err := json.Unmarshal(configFile, &config); err != nil {
+		return "en"
+	}
+	if config.ExportLanguage == "" {
+		return "en"
+	}
+	return config.ExportLanguage
 }
 
 func GetUserConfig() (name string, companyName string, freeSpeech string, err error) {

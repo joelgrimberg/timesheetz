@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 	"timesheet/internal/config"
 
@@ -19,6 +20,51 @@ type TimesheetRow struct {
 	IdleHours     float64
 	HolidayHours  float64
 	SickHours     float64
+}
+
+type excelTranslations struct {
+	Headers        []string
+	HoursTotal     string
+	Month          string
+	Year           string
+	Client         string
+	Project        string
+	NameConsultant string
+	HoursReport    string
+	FilePrefix     string // "Urensheet" or "Timesheet"
+	FileIntern     string // "intern" or "internal"
+	MonthAbbrevs   []string
+}
+
+func getTranslations(lang string) excelTranslations {
+	if lang == "nl" {
+		return excelTranslations{
+			Headers:        []string{"Dag", "Gewerkt", "Overwerk", "Ziekte", "Verlof", "Feestdag", "Beschikbaar", "Opleiding", "Overig", "Stand-By", "Kilometers", "Toelichting"},
+			HoursTotal:     "Uren totaal",
+			Month:          "Maand",
+			Year:           "Jaar",
+			Client:         "Klant",
+			Project:        "Project",
+			NameConsultant: "Naam Consultant",
+			HoursReport:    "Urenverantwoording",
+			FilePrefix:     "Urensheet",
+		FileIntern:     "intern",
+			MonthAbbrevs:   []string{"jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"},
+		}
+	}
+	return excelTranslations{
+		Headers:        []string{"Day", "Worked", "Overtime", "Sick", "Leave", "Holiday", "Available", "Training", "Other", "Stand-By", "Kilometers", "Notes"},
+		HoursTotal:     "Hours total",
+		Month:          "Month",
+		Year:           "Year",
+		Client:         "Client",
+		Project:        "Project",
+		NameConsultant: "Name Consultant",
+		HoursReport:    "Hours report",
+		FilePrefix:     "Timesheet",
+		FileIntern:     "internal",
+		MonthAbbrevs:   []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"},
+	}
 }
 
 func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) (string, error) {
@@ -62,6 +108,10 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 		}
 	}
 
+	// Load translations
+	lang := config.GetExportLanguage()
+	t := getTranslations(lang)
+
 	// Build a map of day -> data for quick lookup
 	dayData := make(map[int]TimesheetRow)
 	for _, row := range timesheetData {
@@ -99,17 +149,17 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 	// Header section (matching deTesters format)
 	f.SetCellValue(sheetName, "N3", fmt.Sprintf("%s", company))
 	f.SetCellStyle(sheetName, "N3", "N3", infoBoldStyle)
-	f.SetCellValue(sheetName, "N5", "Urenverantwoording")
+	f.SetCellValue(sheetName, "N5", t.HoursReport)
 	f.SetCellStyle(sheetName, "N5", "N5", infoBoldStyle)
-	f.SetCellValue(sheetName, "N7", fmt.Sprintf("Maand : %d", month))
+	f.SetCellValue(sheetName, "N7", fmt.Sprintf("%s : %d", t.Month, month))
 	f.SetCellStyle(sheetName, "N7", "N7", infoStyle)
-	f.SetCellValue(sheetName, "N8", fmt.Sprintf("Jaar : %d", year))
+	f.SetCellValue(sheetName, "N8", fmt.Sprintf("%s : %d", t.Year, year))
 	f.SetCellStyle(sheetName, "N8", "N8", infoStyle)
-	f.SetCellValue(sheetName, "N10", fmt.Sprintf("Klant : %s", clientName))
+	f.SetCellValue(sheetName, "N10", fmt.Sprintf("%s : %s", t.Client, clientName))
 	f.SetCellStyle(sheetName, "N10", "N10", infoStyle)
-	f.SetCellValue(sheetName, "N11", "Project :")
+	f.SetCellValue(sheetName, "N11", fmt.Sprintf("%s :", t.Project))
 	f.SetCellStyle(sheetName, "N11", "N11", infoStyle)
-	f.SetCellValue(sheetName, "B14", "Naam Professional:")
+	f.SetCellValue(sheetName, "B14", fmt.Sprintf("%s:", t.NameConsultant))
 	f.SetCellStyle(sheetName, "B14", "B14", infoBoldStyle)
 	f.SetCellValue(sheetName, "E14", name)
 	f.SetCellStyle(sheetName, "E14", "E14", infoStyle)
@@ -182,8 +232,7 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 	f.SetCellStyle(sheetName, "M17", "M17", styleTopRight)
 
 	// Column headers (row 18)
-	headers := []string{"Dag", "Gewerkt", "Overwerk", "Ziekte", "Verlof", "Feestdag", "Beschikbaar", "Opleiding", "Overig", "Stand-By", "Kilometers", "Toelichting"}
-	for i, header := range headers {
+	for i, header := range t.Headers {
 		cell := fmt.Sprintf("%s18", string(rune('B'+i)))
 		f.SetCellValue(sheetName, cell, header)
 	}
@@ -470,8 +519,8 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 	// Calculate grand total (sum of all hour categories)
 	grandTotal := totalGewerkt + totalOverwerk + totalZiekte + totalVerlof + totalFeestdag + totalBeschikbaar + totalOpleiding + totalOverig + totalStandBy
 
-	// Set "Uren totaal" label in footerRow1 (top row of footer)
-	f.SetCellValue(sheetName, fmt.Sprintf("B%d", footerRow1), "Uren totaal")
+	// Set hours total label in footerRow1 (top row of footer)
+	f.SetCellValue(sheetName, fmt.Sprintf("B%d", footerRow1), t.HoursTotal)
 
 	// Set content in middle row (footerRow2) - values aligned under their header columns
 	// B=grandTotal, C=Gewerkt, D=Overwerk, E=Ziekte, F=Verlof, G=Feestdag, H=Beschikbaar, I=Opleiding, J=Overig, K=Stand-By, L=Kilometers, M=Toelichting
@@ -524,7 +573,9 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 	f.SetCellStyle(sheetName, fmt.Sprintf("M%d", footerRow3), fmt.Sprintf("M%d", footerRow3), dataBottomRight)
 
 	// Generate filename with month and year
-	filename := fmt.Sprintf("Timesheet_%02d-%d.xlsx", month, year)
+	monthAbbrev := t.MonthAbbrevs[month-1]
+	companyClean := strings.ReplaceAll(company, " ", "")
+	filename := fmt.Sprintf("%s_%s_%s_%s_%d.xlsx", t.FilePrefix, companyClean, t.FileIntern, monthAbbrev, year)
 	if err := f.SaveAs(filename); err != nil {
 		return "", fmt.Errorf("failed to save excel file: %w", err)
 	}
