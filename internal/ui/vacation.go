@@ -361,25 +361,29 @@ func (m VacationModel) View() string {
 			Render("↑/↓: Navigate • ←/→: Change year • ?: Help • q: Quit • </>: Tabs")
 	}
 
-	// Create summary section showing carryover breakdown
-	summaryContent := ""
+	// Create combined summary box with available, used, and remaining
+	var summaryContent string
 	if m.summary.CarryoverHours > 0 {
 		summaryContent = fmt.Sprintf(
-			"%s\n  %s\n  %s\n\n%s\n  %s\n  %s",
+			"%s\n  %s\n  %s\n\n%s\n  %s\n  %s\n\n%s\n  %s",
 			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Available:"),
 			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Current Year (%d): %d hours", m.currentYear, m.summary.YearlyTarget)),
 			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Carryover from %d: %d hours", m.summary.Year-1, m.summary.CarryoverHours)),
 			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Used:"),
 			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("From Carryover: %d hours", m.summary.UsedFromCarryover)),
 			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("From Current Year: %d hours", m.summary.UsedFromCurrent)),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Remaining:"),
+			lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("%d hours", m.summary.RemainingTotal)),
 		)
 	} else {
 		summaryContent = fmt.Sprintf(
-			"%s\n  %s\n\n%s\n  %s",
+			"%s\n  %s\n\n%s\n  %s\n\n%s\n  %s",
 			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Available:"),
 			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Current Year (%d): %d hours", m.currentYear, m.summary.YearlyTarget)),
 			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Used:"),
 			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Total: %d hours", m.summary.UsedHours)),
+			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Remaining:"),
+			lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("%d hours", m.summary.RemainingTotal)),
 		)
 	}
 
@@ -389,29 +393,18 @@ func (m VacationModel) View() string {
 		Padding(1, 2).
 		Render(summaryContent)
 
-	// Create remaining tile
-	remainingContent := fmt.Sprintf(
-		"%s\n  %s",
-		lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Remaining:"),
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("%d hours", m.summary.RemainingTotal)),
-	)
+	// Vacation table
+	tableView := lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Render(m.table.View())
 
-	remainingBox := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
-		Padding(1, 2).
-		Render(remainingContent)
-
-	// Place tiles side by side
-	summarySection := lipgloss.JoinHorizontal(lipgloss.Top, summaryBox, "  ", remainingBox)
+	// Place table and summary side by side
+	mainSection := lipgloss.JoinHorizontal(lipgloss.Top, tableView, "  ", summaryBox)
 
 	return fmt.Sprintf(
-		"%s\n\n%s\n\n%s%s",
-		lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Render(m.table.View()),
-		summarySection,
+		"%s\n\n%s%s",
+		mainSection,
 		helpStyle.Render("↑/↓: Navigate • <: Prev tab • >: Next tab • q: Quit"),
 		helpView,
 	)

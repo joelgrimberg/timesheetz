@@ -285,10 +285,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle update check result - show status message if update available
+	// Handle update check result - show status message
 	if resultMsg, ok := msg.(updateCheckResultMsg); ok {
-		if resultMsg.err == nil && resultMsg.updateAvailable {
-			return m, SetStatus(fmt.Sprintf("New version %s available!", resultMsg.latestVersion))
+		if resultMsg.err == nil {
+			if resultMsg.updateAvailable {
+				return m, SetStatus(fmt.Sprintf("New version %s available!", resultMsg.latestVersion))
+			}
+			return m, SetStatus("No updates available")
 		}
 		return m, nil
 	}
