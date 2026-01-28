@@ -32,6 +32,38 @@ type updateCheckResultMsg struct {
 	err             error
 }
 
+// CheckForUpdatesCmd returns a command that checks for updates
+// Can be called from AppModel.Init() to check on startup
+func CheckForUpdatesCmd() tea.Cmd {
+	return func() tea.Msg {
+		checkMutex.Lock()
+		defer checkMutex.Unlock()
+
+		// Return cached result if checked within last hour
+		if time.Since(lastCheckTime) < time.Hour && cachedResult.latestVersion != "" {
+			return cachedResult
+		}
+
+		// Perform actual check
+		checker := updater.NewUpdateChecker("joelgrimberg", "timesheetz")
+		latest, available, err := checker.CheckForUpdate(version.Version)
+
+		result := updateCheckResultMsg{
+			latestVersion:   latest,
+			updateAvailable: available,
+			err:             err,
+		}
+
+		// Cache successful results
+		if err == nil {
+			cachedResult = result
+			lastCheckTime = time.Now()
+		}
+
+		return result
+	}
+}
+
 // ConfigKeyMap defines the keybindings for the config view
 type ConfigKeyMap struct {
 	Up      key.Binding
@@ -628,38 +660,9 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 	return rows, indices
 }
 
-// checkForUpdates checks GitHub for new releases
-func (m ConfigModel) checkForUpdates() tea.Msg {
-	checkMutex.Lock()
-	defer checkMutex.Unlock()
-
-	// Return cached result if checked within last hour
-	if time.Since(lastCheckTime) < time.Hour && cachedResult.latestVersion != "" {
-		return cachedResult
-	}
-
-	// Perform actual check
-	checker := updater.NewUpdateChecker("joelgrimberg", "timesheetz")
-	latest, available, err := checker.CheckForUpdate(version.Version)
-
-	result := updateCheckResultMsg{
-		latestVersion:   latest,
-		updateAvailable: available,
-		err:             err,
-	}
-
-	// Cache successful results
-	if err == nil {
-		cachedResult = result
-		lastCheckTime = time.Now()
-	}
-
-	return result
-}
-
 func (m ConfigModel) Init() tea.Cmd {
 	// Trigger update check when config tab loads
-	return m.checkForUpdates
+	return CheckForUpdatesCmd()
 }
 
 func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

@@ -87,34 +87,39 @@ func NewAppModel(addMode bool) AppModel {
 }
 
 func (m AppModel) Init() tea.Cmd {
+	// Always check for updates on startup
+	updateCmd := CheckForUpdatesCmd()
+
 	// Initialize the current mode
+	var modeCmd tea.Cmd
 	switch m.ActiveMode {
 	case TimesheetMode:
-		return m.TimesheetModel.Init()
+		modeCmd = m.TimesheetModel.Init()
 	case OverviewMode:
-		return m.OverviewModel.Init()
+		modeCmd = m.OverviewModel.Init()
 	case FormMode:
-		return m.FormModel.Init()
+		modeCmd = m.FormModel.Init()
 	case TrainingMode:
-		return m.TrainingModel.Init()
+		modeCmd = m.TrainingModel.Init()
 	case TrainingBudgetMode:
-		return m.TrainingBudgetModel.Init()
+		modeCmd = m.TrainingBudgetModel.Init()
 	case TrainingBudgetFormMode:
-		return m.TrainingBudgetFormModel.Init()
+		modeCmd = m.TrainingBudgetFormModel.Init()
 	case VacationMode:
-		return m.VacationModel.Init()
+		modeCmd = m.VacationModel.Init()
 	case ClientsMode:
-		return m.ClientsModel.Init()
+		modeCmd = m.ClientsModel.Init()
 	case ClientFormMode:
-		return m.ClientFormModel.Init()
+		modeCmd = m.ClientFormModel.Init()
 	case ClientRatesModalMode:
-		return m.ClientRatesModalModel.Init()
+		modeCmd = m.ClientRatesModalModel.Init()
 	case EarningsMode:
-		return m.EarningsModel.Init()
+		modeCmd = m.EarningsModel.Init()
 	case ConfigMode:
-		return m.ConfigModel.Init()
+		modeCmd = m.ConfigModel.Init()
 	}
-	return nil
+
+	return tea.Batch(updateCmd, modeCmd)
 }
 
 // ReturnToTimesheetMsg is sent when returning to the timesheet view
@@ -276,6 +281,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Only clear if the ID matches (no newer message was set)
 		if clearMsg.ID == m.statusMessageID {
 			m.statusMessage = ""
+		}
+		return m, nil
+	}
+
+	// Handle update check result - show status message if update available
+	if resultMsg, ok := msg.(updateCheckResultMsg); ok {
+		if resultMsg.err == nil && resultMsg.updateAvailable {
+			return m, SetStatus(fmt.Sprintf("New version %s available!", resultMsg.latestVersion))
 		}
 		return m, nil
 	}
