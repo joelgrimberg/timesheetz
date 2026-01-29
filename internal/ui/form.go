@@ -15,14 +15,14 @@ import (
 
 // Form field constants
 const (
-	dateField = iota
-	clientField
-	clientHoursField
-	trainingHoursField
-	vacationHoursField
-	idleHoursField
-	holidayHoursField
-	sickHoursField
+	DateField = iota
+	ClientField
+	ClientHoursField
+	TrainingHoursField
+	VacationHoursField
+	IdleHoursField
+	HolidayHoursField
+	SickHoursField
 )
 
 // Add to your message types
@@ -99,24 +99,46 @@ func InitialFormModelWithDate(date string) FormModel {
 
 // Prefill the form with existing entry data
 func (m *FormModel) prefillFromEntry(entry db.TimesheetEntry) {
-	m.inputs[clientField].SetValue(entry.Client_name)
-	m.inputs[clientHoursField].SetValue(strconv.Itoa(entry.Client_hours))
-	m.inputs[trainingHoursField].SetValue(strconv.Itoa(entry.Training_hours))
-	m.inputs[vacationHoursField].SetValue(strconv.Itoa(entry.Vacation_hours))
-	m.inputs[idleHoursField].SetValue(strconv.Itoa(entry.Idle_hours))
-	m.inputs[holidayHoursField].SetValue(strconv.Itoa(entry.Holiday_hours))
-	m.inputs[sickHoursField].SetValue(strconv.Itoa(entry.Sick_hours))
+	m.inputs[ClientField].SetValue(entry.Client_name)
+	m.inputs[ClientHoursField].SetValue(strconv.Itoa(entry.Client_hours))
+	m.inputs[TrainingHoursField].SetValue(strconv.Itoa(entry.Training_hours))
+	m.inputs[VacationHoursField].SetValue(strconv.Itoa(entry.Vacation_hours))
+	m.inputs[IdleHoursField].SetValue(strconv.Itoa(entry.Idle_hours))
+	m.inputs[HolidayHoursField].SetValue(strconv.Itoa(entry.Holiday_hours))
+	m.inputs[SickHoursField].SetValue(strconv.Itoa(entry.Sick_hours))
 }
 
 // Clear all form fields except the date
 func (m *FormModel) clearForm() {
-	m.inputs[clientField].SetValue("")
-	m.inputs[clientHoursField].SetValue("")
-	m.inputs[trainingHoursField].SetValue("")
-	m.inputs[vacationHoursField].SetValue("")
-	m.inputs[idleHoursField].SetValue("")
-	m.inputs[holidayHoursField].SetValue("")
-	m.inputs[sickHoursField].SetValue("")
+	m.inputs[ClientField].SetValue("")
+	m.inputs[ClientHoursField].SetValue("")
+	m.inputs[TrainingHoursField].SetValue("")
+	m.inputs[VacationHoursField].SetValue("")
+	m.inputs[IdleHoursField].SetValue("")
+	m.inputs[HolidayHoursField].SetValue("")
+	m.inputs[SickHoursField].SetValue("")
+}
+
+// SetFocus sets focus to a specific field
+func (m *FormModel) SetFocus(field int) {
+	m.focused = field
+	for i := range m.inputs {
+		if i == field {
+			m.inputs[i].Focus()
+		} else {
+			m.inputs[i].Blur()
+		}
+	}
+}
+
+// GetClientValue returns the current client field value
+func (m *FormModel) GetClientValue() string {
+	return m.inputs[ClientField].Value()
+}
+
+// SetClientValue sets the client field value
+func (m *FormModel) SetClientValue(value string) {
+	m.inputs[ClientField].SetValue(value)
 }
 
 func (m FormModel) Init() tea.Cmd {
@@ -142,8 +164,8 @@ func (m FormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyTab:
 			// If in client field with a suggestion, autocomplete it
-			if m.focused == clientField && m.currentSuggestion != "" {
-				m.inputs[clientField].SetValue(m.currentSuggestion)
+			if m.focused == ClientField && m.currentSuggestion != "" {
+				m.inputs[ClientField].SetValue(m.currentSuggestion)
 				m.currentSuggestion = ""
 				return m, nil
 			}
@@ -152,8 +174,8 @@ func (m FormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyShiftTab, tea.KeyUp, tea.KeyDown:
 			// If leaving the date field, check if entry exists for that date
-			if m.focused == dateField {
-				date := m.inputs[dateField].Value()
+			if m.focused == DateField {
+				date := m.inputs[DateField].Value()
 				if isValidDate(date) {
 					// Try to load existing entry for this date
 					dataLayer := datalayer.GetDataLayer()
@@ -193,7 +215,7 @@ func (m FormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Update autocomplete suggestion when entering the client field
-			if m.focused == clientField {
+			if m.focused == ClientField {
 				m.updateAutocompleteSuggestion()
 			}
 
@@ -213,7 +235,7 @@ func (m *FormModel) updateInputs(msg tea.Msg) tea.Cmd {
 	m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
 
 	// Update autocomplete suggestion if we're in the client field
-	if m.focused == clientField {
+	if m.focused == ClientField {
 		m.updateAutocompleteSuggestion()
 	}
 
@@ -235,8 +257,8 @@ func (m FormModel) View() string {
 		s += inputStyle.Render(fieldLabel(i)) + "\n"
 
 		// Special handling for client field with autocomplete suggestion
-		if i == clientField && m.focused == clientField && m.currentSuggestion != "" {
-			typedText := m.inputs[clientField].Value()
+		if i == ClientField && m.focused == ClientField && m.currentSuggestion != "" {
+			typedText := m.inputs[ClientField].Value()
 			suggestionRemaining := m.currentSuggestion[len(typedText):]
 
 			// Manually construct the view with inline suggestion
@@ -276,52 +298,52 @@ func (m FormModel) handleSubmit() tea.Cmd {
 	m.success = ""
 
 	// Validate input fields
-	date := m.inputs[dateField].Value()
+	date := m.inputs[DateField].Value()
 	if !isValidDate(date) {
 		return func() tea.Msg {
 			return errMsg(fmt.Errorf("invalid date format, must be YYYY-MM-DD"))
 		}
 	}
 
-	clientName := m.inputs[clientField].Value()
+	clientName := m.inputs[ClientField].Value()
 
 	// Validate and parse hours
-	clientHours, err := parseHours(m.inputs[clientHoursField].Value())
+	clientHours, err := parseHours(m.inputs[ClientHoursField].Value())
 	if err != nil {
 		return func() tea.Msg {
 			return errMsg(fmt.Errorf("invalid client hours: %v", err))
 		}
 	}
 
-	trainingHours, err := parseHours(m.inputs[trainingHoursField].Value())
+	trainingHours, err := parseHours(m.inputs[TrainingHoursField].Value())
 	if err != nil {
 		return func() tea.Msg {
 			return errMsg(fmt.Errorf("invalid training hours: %v", err))
 		}
 	}
 
-	vacationHours, err := parseHours(m.inputs[vacationHoursField].Value())
+	vacationHours, err := parseHours(m.inputs[VacationHoursField].Value())
 	if err != nil {
 		return func() tea.Msg {
 			return errMsg(fmt.Errorf("invalid vacation hours: %v", err))
 		}
 	}
 
-	idleHours, err := parseHours(m.inputs[idleHoursField].Value())
+	idleHours, err := parseHours(m.inputs[IdleHoursField].Value())
 	if err != nil {
 		return func() tea.Msg {
 			return errMsg(fmt.Errorf("invalid idle hours: %v", err))
 		}
 	}
 
-	holidayHours, err := parseHours(m.inputs[holidayHoursField].Value())
+	holidayHours, err := parseHours(m.inputs[HolidayHoursField].Value())
 	if err != nil {
 		return func() tea.Msg {
 			return errMsg(fmt.Errorf("invalid holiday hours: %v", err))
 		}
 	}
 
-	sickHours, err := parseHours(m.inputs[sickHoursField].Value())
+	sickHours, err := parseHours(m.inputs[SickHoursField].Value())
 	if err != nil {
 		return func() tea.Msg {
 			return errMsg(fmt.Errorf("invalid sick hours: %v", err))
@@ -427,7 +449,7 @@ func parseHours(input string) (int, error) {
 
 // updateAutocompleteSuggestion finds and updates the autocomplete suggestion
 func (m *FormModel) updateAutocompleteSuggestion() {
-	typedText := m.inputs[clientField].Value()
+	typedText := m.inputs[ClientField].Value()
 
 	// If nothing is typed, show the first active client as suggestion
 	if typedText == "" {

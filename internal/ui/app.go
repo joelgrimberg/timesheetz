@@ -328,6 +328,21 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.FormModel.isEditing = true
 			}
 
+			// Check if client field is empty and try to auto-fill
+			if m.FormModel.GetClientValue() == "" {
+				lastClient, err := dataLayer.GetLastClientName()
+				if err == nil && lastClient != "" {
+					m.FormModel.SetClientValue(lastClient)
+					m.FormModel.SetFocus(ClientHoursField)
+				} else {
+					// First time user - no previous client found
+					m.FormModel.SetFocus(ClientField)
+				}
+			} else {
+				// Client already has a value, focus on hours
+				m.FormModel.SetFocus(ClientHoursField)
+			}
+
 			return m, m.FormModel.Init()
 		}
 
