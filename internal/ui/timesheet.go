@@ -614,12 +614,11 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case key.Matches(msg, m.keys.GotoToday):
-			// Get today's date
-			now := time.Now()
-			today := now.Format("2006-01-02")
-
-			// Always go to today's date, regardless of which month we're in
-			return m, ChangeMonth(now.Year(), now.Month(), today)
+			// Open edit form for today's date directly
+			today := time.Now().Format("2006-01-02")
+			return m, func() tea.Msg {
+				return EditEntryMsg{Date: today}
+			}
 
 		case key.Matches(msg, m.keys.Enter):
 			// Get the date from the selected row
