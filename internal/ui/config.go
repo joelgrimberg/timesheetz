@@ -234,12 +234,32 @@ type ConfigModel struct {
 	showModeModal    bool
 	modeModal        *ModeModalModel
 	languageModal    *LanguageModalModel
+	documentTypeModal *DocumentTypeModalModel
+	boolModal        *BoolModalModel
 	textModal        *TextInputModal
 	overlay          *overlay.Model
-	apiModeRowIdx    int // Index of the "API Mode" row in the table
-	nameRowIdx       int // Index of the "Name" row in the table
-	companyRowIdx    int // Index of the "Company Name" row in the table
-	exportLangRowIdx int // Index of the "Export Language" row in the table
+
+	// Row indices for editable fields
+	nameRowIdx              int
+	companyRowIdx           int
+	freeSpeechRowIdx        int
+	startAPIServerRowIdx    int
+	apiPortRowIdx           int
+	apiModeRowIdx           int
+	apiBaseURLRowIdx        int
+	dbLocationRowIdx        int
+	developmentModeRowIdx   int
+	documentTypeRowIdx      int
+	exportLangRowIdx        int
+	sendToOthersRowIdx      int
+	recipientEmailRowIdx    int
+	senderEmailRowIdx       int
+	replyToEmailRowIdx      int
+	resendAPIKeyRowIdx      int
+	trainingTargetRowIdx    int
+	trainingCategoryRowIdx  int
+	vacationTargetRowIdx    int
+	vacationCategoryRowIdx  int
 
 	// Update checking fields
 	latestVersion   string
@@ -250,7 +270,7 @@ type ConfigModel struct {
 
 // IsEditing returns true if a modal is active (text input or mode selection)
 func (m ConfigModel) IsEditing() bool {
-	return m.textModal != nil || m.overlay != nil || m.languageModal != nil
+	return m.textModal != nil || m.overlay != nil || m.languageModal != nil || m.documentTypeModal != nil || m.boolModal != nil
 }
 
 // InitialConfigModel creates a new config model
@@ -316,10 +336,27 @@ func InitialConfigModel() ConfigModel {
 		modeModal:     nil,
 		textModal:     nil,
 		overlay:       nil,
-		apiModeRowIdx:    indices.apiModeRowIdx,
-		nameRowIdx:       indices.nameRowIdx,
-		companyRowIdx:    indices.companyRowIdx,
-		exportLangRowIdx: indices.exportLangRowIdx,
+		// Copy all row indices
+		nameRowIdx:             indices.nameRowIdx,
+		companyRowIdx:          indices.companyRowIdx,
+		freeSpeechRowIdx:       indices.freeSpeechRowIdx,
+		startAPIServerRowIdx:   indices.startAPIServerRowIdx,
+		apiPortRowIdx:          indices.apiPortRowIdx,
+		apiModeRowIdx:          indices.apiModeRowIdx,
+		apiBaseURLRowIdx:       indices.apiBaseURLRowIdx,
+		dbLocationRowIdx:       indices.dbLocationRowIdx,
+		developmentModeRowIdx:  indices.developmentModeRowIdx,
+		documentTypeRowIdx:     indices.documentTypeRowIdx,
+		exportLangRowIdx:       indices.exportLangRowIdx,
+		sendToOthersRowIdx:     indices.sendToOthersRowIdx,
+		recipientEmailRowIdx:   indices.recipientEmailRowIdx,
+		senderEmailRowIdx:      indices.senderEmailRowIdx,
+		replyToEmailRowIdx:     indices.replyToEmailRowIdx,
+		resendAPIKeyRowIdx:     indices.resendAPIKeyRowIdx,
+		trainingTargetRowIdx:   indices.trainingTargetRowIdx,
+		trainingCategoryRowIdx: indices.trainingCategoryRowIdx,
+		vacationTargetRowIdx:   indices.vacationTargetRowIdx,
+		vacationCategoryRowIdx: indices.vacationCategoryRowIdx,
 	}
 }
 
@@ -544,6 +581,215 @@ func (m LanguageModalModel) View() string {
 		Render(modalContent)
 }
 
+// DocumentTypeModalModel represents the modal for selecting document type
+type DocumentTypeModalModel struct {
+	cursor int
+	keys   ConfigKeyMap
+}
+
+// DocumentTypeSelectedMsg is sent when a document type is selected
+type DocumentTypeSelectedMsg struct {
+	DocumentType string
+}
+
+// DocumentTypeCancelledMsg is sent when document type modal is cancelled
+type DocumentTypeCancelledMsg struct{}
+
+func InitialDocumentTypeModalModel(currentType string) *DocumentTypeModalModel {
+	if currentType == "" {
+		currentType = "excel"
+	}
+	typeCursor := 0
+	types := []string{"excel", "pdf"}
+	for i, t := range types {
+		if t == currentType {
+			typeCursor = i
+			break
+		}
+	}
+	return &DocumentTypeModalModel{
+		cursor: typeCursor,
+		keys:   DefaultConfigKeyMap(),
+	}
+}
+
+func (m DocumentTypeModalModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m DocumentTypeModalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Escape):
+			return m, func() tea.Msg {
+				return DocumentTypeCancelledMsg{}
+			}
+		case key.Matches(msg, m.keys.Up):
+			m.cursor--
+			if m.cursor < 0 {
+				m.cursor = 1
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.Down):
+			m.cursor++
+			if m.cursor > 1 {
+				m.cursor = 0
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.Enter):
+			types := []string{"excel", "pdf"}
+			return m, func() tea.Msg {
+				return DocumentTypeSelectedMsg{DocumentType: types[m.cursor]}
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m DocumentTypeModalModel) View() string {
+	types := []string{"excel", "pdf"}
+	typeDescriptions := []string{
+		"Excel spreadsheet (.xlsx)",
+		"PDF document (.pdf)",
+	}
+
+	var modalRows []string
+	modalRows = append(modalRows, lipgloss.NewStyle().Bold(true).Render("Select Document Type:"))
+	modalRows = append(modalRows, "")
+
+	for i, t := range types {
+		var style lipgloss.Style
+		if i == m.cursor {
+			style = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("229")).
+				Background(lipgloss.Color("57")).
+				Padding(0, 1)
+		} else {
+			style = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")).
+				Padding(0, 1)
+		}
+		row := fmt.Sprintf("  %s - %s", style.Render(t), typeDescriptions[i])
+		modalRows = append(modalRows, row)
+	}
+
+	modalRows = append(modalRows, "")
+	modalRows = append(modalRows, lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render("↑/↓: Select • Enter: Confirm • Esc: Cancel"))
+
+	modalContent := lipgloss.JoinVertical(lipgloss.Left, modalRows...)
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Width(60).
+		Render(modalContent)
+}
+
+// BoolModalModel represents the modal for toggling boolean values
+type BoolModalModel struct {
+	cursor    int
+	fieldName string
+	keys      ConfigKeyMap
+}
+
+// BoolSelectedMsg is sent when a boolean value is selected
+type BoolSelectedMsg struct {
+	FieldName string
+	Value     bool
+}
+
+// BoolCancelledMsg is sent when bool modal is cancelled
+type BoolCancelledMsg struct{}
+
+func InitialBoolModalModel(fieldName string, currentValue bool) *BoolModalModel {
+	cursor := 0
+	if currentValue {
+		cursor = 0
+	} else {
+		cursor = 1
+	}
+	return &BoolModalModel{
+		cursor:    cursor,
+		fieldName: fieldName,
+		keys:      DefaultConfigKeyMap(),
+	}
+}
+
+func (m BoolModalModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m BoolModalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Escape):
+			return m, func() tea.Msg {
+				return BoolCancelledMsg{}
+			}
+		case key.Matches(msg, m.keys.Up):
+			m.cursor--
+			if m.cursor < 0 {
+				m.cursor = 1
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.Down):
+			m.cursor++
+			if m.cursor > 1 {
+				m.cursor = 0
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.Enter):
+			value := m.cursor == 0 // 0 = true, 1 = false
+			return m, func() tea.Msg {
+				return BoolSelectedMsg{FieldName: m.fieldName, Value: value}
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m BoolModalModel) View() string {
+	options := []string{"true", "false"}
+
+	var modalRows []string
+	modalRows = append(modalRows, lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("Set %s:", m.fieldName)))
+	modalRows = append(modalRows, "")
+
+	for i, opt := range options {
+		var style lipgloss.Style
+		if i == m.cursor {
+			style = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("229")).
+				Background(lipgloss.Color("57")).
+				Padding(0, 1)
+		} else {
+			style = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")).
+				Padding(0, 1)
+		}
+		modalRows = append(modalRows, fmt.Sprintf("  %s", style.Render(opt)))
+	}
+
+	modalRows = append(modalRows, "")
+	modalRows = append(modalRows, lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render("↑/↓: Select • Enter: Confirm • Esc: Cancel"))
+
+	modalContent := lipgloss.JoinVertical(lipgloss.Left, modalRows...)
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Width(60).
+		Render(modalContent)
+}
+
 // maskAPIKey masks the API key showing only first few and last few characters
 func maskAPIKey(key string) string {
 	if len(key) <= 8 {
@@ -554,10 +800,26 @@ func maskAPIKey(key string) string {
 
 // configRowIndices holds the row indices for editable fields
 type configRowIndices struct {
-	nameRowIdx       int
-	companyRowIdx    int
-	apiModeRowIdx    int
-	exportLangRowIdx int
+	nameRowIdx              int
+	companyRowIdx           int
+	freeSpeechRowIdx        int
+	startAPIServerRowIdx    int
+	apiPortRowIdx           int
+	apiModeRowIdx           int
+	apiBaseURLRowIdx        int
+	dbLocationRowIdx        int
+	developmentModeRowIdx   int
+	documentTypeRowIdx      int
+	exportLangRowIdx        int
+	sendToOthersRowIdx      int
+	recipientEmailRowIdx    int
+	senderEmailRowIdx       int
+	replyToEmailRowIdx      int
+	resendAPIKeyRowIdx      int
+	trainingTargetRowIdx    int
+	trainingCategoryRowIdx  int
+	vacationTargetRowIdx    int
+	vacationCategoryRowIdx  int
 }
 
 // buildTableRows builds the configuration table rows with update info
@@ -590,11 +852,14 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 	rows = append(rows, table.Row{"  Name", cfg.Name})
 	indices.companyRowIdx = len(rows)
 	rows = append(rows, table.Row{"  Company Name", cfg.CompanyName})
+	indices.freeSpeechRowIdx = len(rows)
 	rows = append(rows, table.Row{"  Free Speech", cfg.FreeSpeech})
 
 	// API Server Configuration
 	rows = append(rows, table.Row{"API Server", ""})
+	indices.startAPIServerRowIdx = len(rows)
 	rows = append(rows, table.Row{"  Start API Server", fmt.Sprintf("%v", cfg.StartAPIServer)})
+	indices.apiPortRowIdx = len(rows)
 	rows = append(rows, table.Row{"  API Port", strconv.Itoa(cfg.APIPort)})
 
 	// API Client Configuration
@@ -605,6 +870,7 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 	} else {
 		rows = append(rows, table.Row{"  API Mode", cfg.APIMode})
 	}
+	indices.apiBaseURLRowIdx = len(rows)
 	if cfg.APIBaseURL == "" {
 		rows = append(rows, table.Row{"  API Base URL", "(not set)"})
 	} else {
@@ -613,6 +879,7 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 
 	// Database Location
 	rows = append(rows, table.Row{"Database", ""})
+	indices.dbLocationRowIdx = len(rows)
 	if cfg.DBLocation == "" {
 		rows = append(rows, table.Row{"  DB Location", "(default)"})
 	} else {
@@ -621,11 +888,17 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 
 	// Development Settings
 	rows = append(rows, table.Row{"Development", ""})
+	indices.developmentModeRowIdx = len(rows)
 	rows = append(rows, table.Row{"  Development Mode", fmt.Sprintf("%v", cfg.DevelopmentMode)})
 
 	// Document Settings
 	rows = append(rows, table.Row{"Document", ""})
-	rows = append(rows, table.Row{"  Send Document Type", cfg.SendDocumentType})
+	indices.documentTypeRowIdx = len(rows)
+	docType := cfg.SendDocumentType
+	if docType == "" {
+		docType = "excel (default)"
+	}
+	rows = append(rows, table.Row{"  Send Document Type", docType})
 	indices.exportLangRowIdx = len(rows)
 	exportLang := cfg.ExportLanguage
 	if exportLang == "" {
@@ -635,10 +908,27 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 
 	// Email Configuration
 	rows = append(rows, table.Row{"Email", ""})
+	indices.sendToOthersRowIdx = len(rows)
 	rows = append(rows, table.Row{"  Send To Others", fmt.Sprintf("%v", cfg.SendToOthers)})
-	rows = append(rows, table.Row{"  Recipient Email", cfg.RecipientEmail})
-	rows = append(rows, table.Row{"  Sender Email", cfg.SenderEmail})
-	rows = append(rows, table.Row{"  Reply To Email", cfg.ReplyToEmail})
+	indices.recipientEmailRowIdx = len(rows)
+	if cfg.RecipientEmail == "" {
+		rows = append(rows, table.Row{"  Recipient Email", "(not set)"})
+	} else {
+		rows = append(rows, table.Row{"  Recipient Email", cfg.RecipientEmail})
+	}
+	indices.senderEmailRowIdx = len(rows)
+	if cfg.SenderEmail == "" {
+		rows = append(rows, table.Row{"  Sender Email", "(not set)"})
+	} else {
+		rows = append(rows, table.Row{"  Sender Email", cfg.SenderEmail})
+	}
+	indices.replyToEmailRowIdx = len(rows)
+	if cfg.ReplyToEmail == "" {
+		rows = append(rows, table.Row{"  Reply To Email", "(not set)"})
+	} else {
+		rows = append(rows, table.Row{"  Reply To Email", cfg.ReplyToEmail})
+	}
+	indices.resendAPIKeyRowIdx = len(rows)
 	if cfg.ResendAPIKey != "" {
 		// Mask API key for security
 		maskedKey := maskAPIKey(cfg.ResendAPIKey)
@@ -649,13 +939,25 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 
 	// Training Hours Configuration
 	rows = append(rows, table.Row{"Training Hours", ""})
+	indices.trainingTargetRowIdx = len(rows)
 	rows = append(rows, table.Row{"  Yearly Target", strconv.Itoa(cfg.TrainingHours.YearlyTarget)})
-	rows = append(rows, table.Row{"  Category", cfg.TrainingHours.Category})
+	indices.trainingCategoryRowIdx = len(rows)
+	if cfg.TrainingHours.Category == "" {
+		rows = append(rows, table.Row{"  Category", "(not set)"})
+	} else {
+		rows = append(rows, table.Row{"  Category", cfg.TrainingHours.Category})
+	}
 
 	// Vacation Hours Configuration
 	rows = append(rows, table.Row{"Vacation Hours", ""})
+	indices.vacationTargetRowIdx = len(rows)
 	rows = append(rows, table.Row{"  Yearly Target", strconv.Itoa(cfg.VacationHours.YearlyTarget)})
-	rows = append(rows, table.Row{"  Category", cfg.VacationHours.Category})
+	indices.vacationCategoryRowIdx = len(rows)
+	if cfg.VacationHours.Category == "" {
+		rows = append(rows, table.Row{"  Category", "(not set)"})
+	} else {
+		rows = append(rows, table.Row{"  Category", cfg.VacationHours.Category})
+	}
 
 	return rows, indices
 }
@@ -679,6 +981,36 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cfg.Name = saveMsg.Value
 				case "Company Name":
 					cfg.CompanyName = saveMsg.Value
+				case "Free Speech":
+					cfg.FreeSpeech = saveMsg.Value
+				case "API Port":
+					if port, err := strconv.Atoi(saveMsg.Value); err == nil {
+						cfg.APIPort = port
+					}
+				case "API Base URL":
+					cfg.APIBaseURL = saveMsg.Value
+				case "DB Location":
+					cfg.DBLocation = saveMsg.Value
+				case "Recipient Email":
+					cfg.RecipientEmail = saveMsg.Value
+				case "Sender Email":
+					cfg.SenderEmail = saveMsg.Value
+				case "Reply To Email":
+					cfg.ReplyToEmail = saveMsg.Value
+				case "Resend API Key":
+					cfg.ResendAPIKey = saveMsg.Value
+				case "Training Yearly Target":
+					if target, err := strconv.Atoi(saveMsg.Value); err == nil {
+						cfg.TrainingHours.YearlyTarget = target
+					}
+				case "Training Category":
+					cfg.TrainingHours.Category = saveMsg.Value
+				case "Vacation Yearly Target":
+					if target, err := strconv.Atoi(saveMsg.Value); err == nil {
+						cfg.VacationHours.YearlyTarget = target
+					}
+				case "Vacation Category":
+					cfg.VacationHours.Category = saveMsg.Value
 				}
 				config.SaveConfig(cfg)
 				// Rebuild the table with updated values
@@ -766,6 +1098,48 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, foregroundCmd
 	}
 
+	// Handle document type modal updates (using overlay)
+	if m.overlay != nil && m.documentTypeModal != nil {
+		updatedForeground, foregroundCmd := m.documentTypeModal.Update(msg)
+		if updatedModal, ok := updatedForeground.(DocumentTypeModalModel); ok {
+			m.documentTypeModal = &updatedModal
+		} else if updatedModalPtr, ok := updatedForeground.(*DocumentTypeModalModel); ok {
+			m.documentTypeModal = updatedModalPtr
+		}
+
+		m.overlay = overlay.New(
+			m.documentTypeModal,
+			m,
+			overlay.Center,
+			overlay.Center,
+			0,
+			0,
+		)
+
+		return m, foregroundCmd
+	}
+
+	// Handle bool modal updates (using overlay)
+	if m.overlay != nil && m.boolModal != nil {
+		updatedForeground, foregroundCmd := m.boolModal.Update(msg)
+		if updatedModal, ok := updatedForeground.(BoolModalModel); ok {
+			m.boolModal = &updatedModal
+		} else if updatedModalPtr, ok := updatedForeground.(*BoolModalModel); ok {
+			m.boolModal = updatedModalPtr
+		}
+
+		m.overlay = overlay.New(
+			m.boolModal,
+			m,
+			overlay.Center,
+			overlay.Center,
+			0,
+			0,
+		)
+
+		return m, foregroundCmd
+	}
+
 	// Normal table interactions
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -781,50 +1155,95 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Check if we're on the Name row
+			// Text input fields
 			if cursor == m.nameRowIdx {
 				m.textModal = InitialTextInputModal("Name", cfg.Name)
 				return m, m.textModal.Init()
 			}
-
-			// Check if we're on the Company Name row
 			if cursor == m.companyRowIdx {
 				m.textModal = InitialTextInputModal("Company Name", cfg.CompanyName)
 				return m, m.textModal.Init()
 			}
+			if cursor == m.freeSpeechRowIdx {
+				m.textModal = InitialTextInputModal("Free Speech", cfg.FreeSpeech)
+				return m, m.textModal.Init()
+			}
+			if cursor == m.apiPortRowIdx {
+				m.textModal = InitialTextInputModal("API Port", strconv.Itoa(cfg.APIPort))
+				return m, m.textModal.Init()
+			}
+			if cursor == m.apiBaseURLRowIdx {
+				m.textModal = InitialTextInputModal("API Base URL", cfg.APIBaseURL)
+				return m, m.textModal.Init()
+			}
+			if cursor == m.dbLocationRowIdx {
+				m.textModal = InitialTextInputModal("DB Location", cfg.DBLocation)
+				return m, m.textModal.Init()
+			}
+			if cursor == m.recipientEmailRowIdx {
+				m.textModal = InitialTextInputModal("Recipient Email", cfg.RecipientEmail)
+				return m, m.textModal.Init()
+			}
+			if cursor == m.senderEmailRowIdx {
+				m.textModal = InitialTextInputModal("Sender Email", cfg.SenderEmail)
+				return m, m.textModal.Init()
+			}
+			if cursor == m.replyToEmailRowIdx {
+				m.textModal = InitialTextInputModal("Reply To Email", cfg.ReplyToEmail)
+				return m, m.textModal.Init()
+			}
+			if cursor == m.resendAPIKeyRowIdx {
+				m.textModal = InitialTextInputModal("Resend API Key", cfg.ResendAPIKey)
+				return m, m.textModal.Init()
+			}
+			if cursor == m.trainingTargetRowIdx {
+				m.textModal = InitialTextInputModal("Training Yearly Target", strconv.Itoa(cfg.TrainingHours.YearlyTarget))
+				return m, m.textModal.Init()
+			}
+			if cursor == m.trainingCategoryRowIdx {
+				m.textModal = InitialTextInputModal("Training Category", cfg.TrainingHours.Category)
+				return m, m.textModal.Init()
+			}
+			if cursor == m.vacationTargetRowIdx {
+				m.textModal = InitialTextInputModal("Vacation Yearly Target", strconv.Itoa(cfg.VacationHours.YearlyTarget))
+				return m, m.textModal.Init()
+			}
+			if cursor == m.vacationCategoryRowIdx {
+				m.textModal = InitialTextInputModal("Vacation Category", cfg.VacationHours.Category)
+				return m, m.textModal.Init()
+			}
 
-			// Check if we're on the Export Language row
-			if cursor == m.exportLangRowIdx {
-				currentLang := cfg.ExportLanguage
-				m.languageModal = InitialLanguageModalModel(currentLang)
-				m.overlay = overlay.New(
-					m.languageModal,
-					m,
-					overlay.Center,
-					overlay.Center,
-					0,
-					0,
-				)
+			// Boolean toggle fields
+			if cursor == m.startAPIServerRowIdx {
+				m.boolModal = InitialBoolModalModel("Start API Server", cfg.StartAPIServer)
+				m.overlay = overlay.New(m.boolModal, m, overlay.Center, overlay.Center, 0, 0)
+				return m, nil
+			}
+			if cursor == m.developmentModeRowIdx {
+				m.boolModal = InitialBoolModalModel("Development Mode", cfg.DevelopmentMode)
+				m.overlay = overlay.New(m.boolModal, m, overlay.Center, overlay.Center, 0, 0)
+				return m, nil
+			}
+			if cursor == m.sendToOthersRowIdx {
+				m.boolModal = InitialBoolModalModel("Send To Others", cfg.SendToOthers)
+				m.overlay = overlay.New(m.boolModal, m, overlay.Center, overlay.Center, 0, 0)
 				return m, nil
 			}
 
-			// Check if we're on the API Mode row
+			// Dropdown fields
+			if cursor == m.exportLangRowIdx {
+				m.languageModal = InitialLanguageModalModel(cfg.ExportLanguage)
+				m.overlay = overlay.New(m.languageModal, m, overlay.Center, overlay.Center, 0, 0)
+				return m, nil
+			}
+			if cursor == m.documentTypeRowIdx {
+				m.documentTypeModal = InitialDocumentTypeModalModel(cfg.SendDocumentType)
+				m.overlay = overlay.New(m.documentTypeModal, m, overlay.Center, overlay.Center, 0, 0)
+				return m, nil
+			}
 			if cursor == m.apiModeRowIdx {
-				currentMode := cfg.APIMode
-
-				// Create modal
-				m.modeModal = InitialModeModalModel(currentMode)
-
-				// Create overlay - pass m (value) not &m (pointer) as background
-				// The overlay will handle the model updates
-				m.overlay = overlay.New(
-					m.modeModal,
-					m,
-					overlay.Center,
-					overlay.Center,
-					0,
-					0,
-				)
+				m.modeModal = InitialModeModalModel(cfg.APIMode)
+				m.overlay = overlay.New(m.modeModal, m, overlay.Center, overlay.Center, 0, 0)
 				m.showModeModal = true
 				return m, nil
 			}

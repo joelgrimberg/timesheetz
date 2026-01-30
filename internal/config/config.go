@@ -543,27 +543,13 @@ func RequireConfig() {
 }
 
 // GetConfigPath returns the path to the config file
-// It checks both the standard config directory and ~/.config for backward compatibility
+// Uses XDG Base Directory Specification: ~/.config/timesheetz/config.json
 func GetConfigPath() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Failed to get user home directory: %v", err)
 	}
-	
-	// First, check the legacy location (~/.config/timesheetz/config.json)
-	legacyPath := filepath.Join(homeDir, ".config", "timesheetz", "config.json")
-	if _, err := os.Stat(legacyPath); err == nil {
-		// Legacy config file exists, use it
-		return legacyPath
-	}
-	
-	// Otherwise, use the standard config directory
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		// Fallback to .config if UserConfigDir fails
-		configDir = filepath.Join(homeDir, ".config")
-	}
-	return filepath.Join(configDir, "timesheetz", "config.json")
+	return filepath.Join(homeDir, ".config", "timesheetz", "config.json")
 }
 
 // SaveConfig saves the configuration to a file

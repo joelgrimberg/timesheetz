@@ -547,6 +547,52 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ConfigModel.table.SetCursor(m.ConfigModel.exportLangRowIdx)
 			}
 			return m, nil
+		case DocumentTypeSelectedMsg:
+			cfg, err := config.GetConfig()
+			if err == nil {
+				cfg.SendDocumentType = msg.DocumentType
+				config.SaveConfig(cfg)
+			}
+			m.ConfigModel = InitialConfigModel()
+			if m.ConfigModel.documentTypeRowIdx < len(m.ConfigModel.table.Rows()) {
+				m.ConfigModel.table.SetCursor(m.ConfigModel.documentTypeRowIdx)
+			}
+			m.statusMessage = "Configuration saved"
+			return m, nil
+		case DocumentTypeCancelledMsg:
+			m.ConfigModel = InitialConfigModel()
+			if m.ConfigModel.documentTypeRowIdx < len(m.ConfigModel.table.Rows()) {
+				m.ConfigModel.table.SetCursor(m.ConfigModel.documentTypeRowIdx)
+			}
+			return m, nil
+		case BoolSelectedMsg:
+			cfg, err := config.GetConfig()
+			if err == nil {
+				switch msg.FieldName {
+				case "Start API Server":
+					cfg.StartAPIServer = msg.Value
+				case "Development Mode":
+					cfg.DevelopmentMode = msg.Value
+				case "Send To Others":
+					cfg.SendToOthers = msg.Value
+				}
+				config.SaveConfig(cfg)
+			}
+			// Save cursor position based on field
+			cursorIdx := m.ConfigModel.table.Cursor()
+			m.ConfigModel = InitialConfigModel()
+			if cursorIdx < len(m.ConfigModel.table.Rows()) {
+				m.ConfigModel.table.SetCursor(cursorIdx)
+			}
+			m.statusMessage = "Configuration saved"
+			return m, nil
+		case BoolCancelledMsg:
+			cursorIdx := m.ConfigModel.table.Cursor()
+			m.ConfigModel = InitialConfigModel()
+			if cursorIdx < len(m.ConfigModel.table.Rows()) {
+				m.ConfigModel.table.SetCursor(cursorIdx)
+			}
+			return m, nil
 		}
 		// Update config model
 		configModel, cmd := m.ConfigModel.Update(msg)
