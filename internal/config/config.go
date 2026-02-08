@@ -17,6 +17,8 @@ import (
 // Runtime development mode flag
 var runtimeDevMode bool
 var runtimePort int
+var runtimeDBType string
+var runtimePostgresURL string
 
 // TrainingHours represents the training hours configuration
 type TrainingHours struct {
@@ -45,8 +47,10 @@ type Config struct {
 	APIMode    string `json:"apiMode"`    // "local", "dual", or "remote" (default: "local")
 	APIBaseURL string `json:"apiBaseURL"` // Base URL for remote API (e.g., "http://timesheetz.local")
 
-	// Database Location
-	DBLocation string `json:"dbLocation"`
+	// Database Configuration
+	DBLocation  string `json:"dbLocation"`
+	DBType      string `json:"dbType"`      // "sqlite" (default) or "postgres"
+	PostgresURL string `json:"postgresURL"` // PostgreSQL connection string
 
 	// Development Settings
 	DevelopmentMode bool `json:"developmentMode"`
@@ -276,262 +280,262 @@ func RequireConfig() {
 				return
 			}
 			logging.Log("Config file not found, showing setup form...")
-		config := Config{
-			// User Information
-			Name:        "",
-			CompanyName: "",
-			FreeSpeech:  "",
+			config := Config{
+				// User Information
+				Name:        "",
+				CompanyName: "",
+				FreeSpeech:  "",
 
-			// API Server Configuration
-			StartAPIServer: true,
-			APIPort:        8080,
+				// API Server Configuration
+				StartAPIServer: true,
+				APIPort:        8080,
 
-			// API Client Configuration
-			APIMode:    "local", // Default to local mode
-			APIBaseURL: "",      // Empty means use local database
+				// API Client Configuration
+				APIMode:    "local", // Default to local mode
+				APIBaseURL: "",      // Empty means use local database
 
-			// Database Location
-			DBLocation: "",
+				// Database Location
+				DBLocation: "",
 
-			// Development Settings
-			DevelopmentMode: false,
+				// Development Settings
+				DevelopmentMode: false,
 
-			// Document Settings
-			SendDocumentType: "pdf",
+				// Document Settings
+				SendDocumentType: "pdf",
 
-			// Email Configuration
-			SendToOthers:   false,
-			RecipientEmail: "",
-			SenderEmail:    "",
-			ReplyToEmail:   "",
-			ResendAPIKey:   "",
+				// Email Configuration
+				SendToOthers:   false,
+				RecipientEmail: "",
+				SenderEmail:    "",
+				ReplyToEmail:   "",
+				ResendAPIKey:   "",
 
-			// Training Hours Configuration
-			TrainingHours: TrainingHours{
-				YearlyTarget: 36, // Default to 36 hours
-				Category:     "Training",
-			},
+				// Training Hours Configuration
+				TrainingHours: TrainingHours{
+					YearlyTarget: 36, // Default to 36 hours
+					Category:     "Training",
+				},
 
-			// Vacation Hours Configuration
-			VacationHours: VacationHours{
-				YearlyTarget: 0, // Default to 0 hours
-				Category:     "Vacation",
-			},
-		}
+				// Vacation Hours Configuration
+				VacationHours: VacationHours{
+					YearlyTarget: 0, // Default to 0 hours
+					Category:     "Vacation",
+				},
+			}
 
-		// Should we run in accessible mode?
-		accessible, _ := strconv.ParseBool(os.Getenv("ACCESSIBLE"))
+			// Should we run in accessible mode?
+			accessible, _ := strconv.ParseBool(os.Getenv("ACCESSIBLE"))
 
-		// Create a string variable for port input
-		portStr := "8080"
-		trainingHoursStr := "36"
-		vacationHoursStr := "0"
-		dbLocationStr := ""
+			// Create a string variable for port input
+			portStr := "8080"
+			trainingHoursStr := "36"
+			vacationHoursStr := "0"
+			dbLocationStr := ""
 
-		form := huh.NewForm(
-			huh.NewGroup(huh.NewNote().
-				Title("Timesheetz™ Setup").
-				Description("Welcome to _Timesheetz™_.\nA Unicorny way to manage your timesheetz\n\nAight, Be a 🦄! \n\n").
-				Next(true).
-				NextLabel("Next"),
-			),
+			form := huh.NewForm(
+				huh.NewGroup(huh.NewNote().
+					Title("Timesheetz™ Setup").
+					Description("Welcome to _Timesheetz™_.\nA Unicorny way to manage your timesheetz\n\nAight, Be a 🦄! \n\n").
+					Next(true).
+					NextLabel("Next"),
+				),
 
-			// User Information
-			huh.NewGroup(
-				huh.NewInput().
-					Value(&config.Name).
-					Title("What is your name?").
-					Placeholder("Uni Corn").
-					Description("We'll use this to personalize your experience."),
+				// User Information
+				huh.NewGroup(
+					huh.NewInput().
+						Value(&config.Name).
+						Title("What is your name?").
+						Placeholder("Uni Corn").
+						Description("We'll use this to personalize your experience."),
 
-				huh.NewInput().
-					Value(&config.CompanyName).
-					Title("What is the name of your company?").
-					Placeholder("Uni Corn").
-					Description("Don't worry, we all serve a master."),
+					huh.NewInput().
+						Value(&config.CompanyName).
+						Title("What is the name of your company?").
+						Placeholder("Uni Corn").
+						Description("Don't worry, we all serve a master."),
 
-				huh.NewInput().
-					Value(&config.FreeSpeech).
-					Title("What else do you want to share (will be put below the company name)").
-					Placeholder("Uni Corn").
-					Description("Free Speech"),
-			),
+					huh.NewInput().
+						Value(&config.FreeSpeech).
+						Title("What else do you want to share (will be put below the company name)").
+						Placeholder("Uni Corn").
+						Description("Free Speech"),
+				),
 
-			// Database Configuration
-			huh.NewGroup(
-				huh.NewInput().
-					Value(&dbLocationStr).
-					Title("Where should your database be stored?").
-					Placeholder("/path/to/timesheet.db").
-					Description("Leave empty to use the default location (~/.config/timesheetz/timesheet.db). You can specify a full path to store it elsewhere."),
-			),
+				// Database Configuration
+				huh.NewGroup(
+					huh.NewInput().
+						Value(&dbLocationStr).
+						Title("Where should your database be stored?").
+						Placeholder("/path/to/timesheet.db").
+						Description("Leave empty to use the default location (~/.config/timesheetz/timesheet.db). You can specify a full path to store it elsewhere."),
+				),
 
-			// Training Hours Configuration
-			huh.NewGroup(
-				huh.NewInput().
-					Value(&trainingHoursStr).
-					Title("How many training hours are allocated per year?").
-					Placeholder("36").
-					Description("This is the total number of training hours you can use per year."),
-			),
+				// Training Hours Configuration
+				huh.NewGroup(
+					huh.NewInput().
+						Value(&trainingHoursStr).
+						Title("How many training hours are allocated per year?").
+						Placeholder("36").
+						Description("This is the total number of training hours you can use per year."),
+				),
 
-			// Vacation Hours Configuration
-			huh.NewGroup(
-				huh.NewInput().
-					Value(&vacationHoursStr).
-					Title("How many vacation hours are allocated per year?").
-					Placeholder("0").
-					Description("This is the total number of vacation hours you can use per year."),
-			),
+				// Vacation Hours Configuration
+				huh.NewGroup(
+					huh.NewInput().
+						Value(&vacationHoursStr).
+						Title("How many vacation hours are allocated per year?").
+						Placeholder("0").
+						Description("This is the total number of vacation hours you can use per year."),
+				),
 
-			// API Server Configuration
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("Do you want to start the API server every time you start the app?").
-					Value(&config.StartAPIServer).
-					Affirmative("Yes").
-					Negative("No"),
+				// API Server Configuration
+				huh.NewGroup(
+					huh.NewConfirm().
+						Title("Do you want to start the API server every time you start the app?").
+						Value(&config.StartAPIServer).
+						Affirmative("Yes").
+						Negative("No"),
 
-				huh.NewInput().
-					Value(&portStr).
-					Title("What port should the API server run on?").
-					Placeholder("8080").
-					Validate(func(s string) error {
-						port, err := strconv.Atoi(s)
-						if err != nil {
-							return fmt.Errorf("port must be a number")
-						}
-						if port < 1 || port > 65535 {
-							return fmt.Errorf("port must be between 1 and 65535")
-						}
-						return nil
-					}),
-			),
+					huh.NewInput().
+						Value(&portStr).
+						Title("What port should the API server run on?").
+						Placeholder("8080").
+						Validate(func(s string) error {
+							port, err := strconv.Atoi(s)
+							if err != nil {
+								return fmt.Errorf("port must be a number")
+							}
+							if port < 1 || port > 65535 {
+								return fmt.Errorf("port must be between 1 and 65535")
+							}
+							return nil
+						}),
+				),
 
-			// Development Settings
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("Do you want to enable development mode?").
-					Value(&config.DevelopmentMode).
-					Affirmative("Yes").
-					Negative("No").
-					Description("Development mode uses a local database in the current directory."),
-			),
+				// Development Settings
+				huh.NewGroup(
+					huh.NewConfirm().
+						Title("Do you want to enable development mode?").
+						Value(&config.DevelopmentMode).
+						Affirmative("Yes").
+						Negative("No").
+						Description("Development mode uses a local database in the current directory."),
+				),
 
-			// Document Settings
-			huh.NewGroup(
-				huh.NewSelect[string]().
-					Title("What document type do you want to use for exports?").
-					Options(
-						huh.NewOption("PDF", "pdf"),
-						huh.NewOption("Excel", "excel"),
-					).
-					Value(&config.SendDocumentType),
-			),
+				// Document Settings
+				huh.NewGroup(
+					huh.NewSelect[string]().
+						Title("What document type do you want to use for exports?").
+						Options(
+							huh.NewOption("PDF", "pdf"),
+							huh.NewOption("Excel", "excel"),
+						).
+						Value(&config.SendDocumentType),
+				),
 
-			// Email Configuration
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("Would you like to be able to send the timesheet to someone who loves corny timesheetz?").
-					Value(&config.SendToOthers).
-					Affirmative("Yes").
-					Negative("No"),
-			),
+				// Email Configuration
+				huh.NewGroup(
+					huh.NewConfirm().
+						Title("Would you like to be able to send the timesheet to someone who loves corny timesheetz?").
+						Value(&config.SendToOthers).
+						Affirmative("Yes").
+						Negative("No"),
+				),
 
-			// Conditional email-related questions
-			huh.NewGroup(
-				huh.NewInput().
-					Value(&config.RecipientEmail).
-					Title("What is the recipient's email address?").
-					Placeholder("recipient@example.com").
-					Validate(func(s string) error {
-						if s == "" && config.SendToOthers {
-							return fmt.Errorf("email address is required")
-						}
-						return nil
-					}),
+				// Conditional email-related questions
+				huh.NewGroup(
+					huh.NewInput().
+						Value(&config.RecipientEmail).
+						Title("What is the recipient's email address?").
+						Placeholder("recipient@example.com").
+						Validate(func(s string) error {
+							if s == "" && config.SendToOthers {
+								return fmt.Errorf("email address is required")
+							}
+							return nil
+						}),
 
-				huh.NewInput().
-					Value(&config.SenderEmail).
-					Title("What is your email address?").
-					Placeholder("you@example.com").
-					Validate(func(s string) error {
-						if s == "" && config.SendToOthers {
-							return fmt.Errorf("email address is required")
-						}
-						return nil
-					}),
+					huh.NewInput().
+						Value(&config.SenderEmail).
+						Title("What is your email address?").
+						Placeholder("you@example.com").
+						Validate(func(s string) error {
+							if s == "" && config.SendToOthers {
+								return fmt.Errorf("email address is required")
+							}
+							return nil
+						}),
 
-				huh.NewInput().
-					Value(&config.ReplyToEmail).
-					Title("What is your reply-to email address?").
-					Placeholder("you@example.com").
-					Validate(func(s string) error {
-						if s == "" && config.SendToOthers {
-							return fmt.Errorf("email address is required")
-						}
-						return nil
-					}),
+					huh.NewInput().
+						Value(&config.ReplyToEmail).
+						Title("What is your reply-to email address?").
+						Placeholder("you@example.com").
+						Validate(func(s string) error {
+							if s == "" && config.SendToOthers {
+								return fmt.Errorf("email address is required")
+							}
+							return nil
+						}),
 
-				huh.NewInput().
-					Value(&config.ResendAPIKey).
-					Title("What is your Resend API key?").
-					Placeholder("re_123456789").
-					Password(true).
-					Validate(func(s string) error {
-						if s == "" && config.SendToOthers {
-							return fmt.Errorf("Resend API key is required")
-						}
-						return nil
-					}),
-			).WithHideFunc(func() bool {
-				return !config.SendToOthers
-			}),
+					huh.NewInput().
+						Value(&config.ResendAPIKey).
+						Title("What is your Resend API key?").
+						Placeholder("re_123456789").
+						Password(true).
+						Validate(func(s string) error {
+							if s == "" && config.SendToOthers {
+								return fmt.Errorf("Resend API key is required")
+							}
+							return nil
+						}),
+				).WithHideFunc(func() bool {
+					return !config.SendToOthers
+				}),
+
+				// Save the configuration
+				huh.NewGroup(
+					huh.NewNote().
+						Title("Saving Configuration").
+						Description("Saving your configuration..."),
+				),
+			).WithAccessible(accessible)
+
+			err := form.Run()
+			if err != nil {
+				fmt.Println("Error running form:", err)
+				os.Exit(1)
+			}
+
+			// Convert port string to integer
+			port, err := strconv.Atoi(portStr)
+			if err != nil {
+				fmt.Println("Error: Invalid port number")
+				os.Exit(1)
+			}
+			config.APIPort = port
+
+			// Convert training hours string to integer
+			trainingHours, err := strconv.Atoi(trainingHoursStr)
+			if err != nil {
+				fmt.Println("Error: Invalid training hours number")
+				os.Exit(1)
+			}
+			config.TrainingHours.YearlyTarget = trainingHours
+
+			// Convert vacation hours string to integer
+			vacationHours, err := strconv.Atoi(vacationHoursStr)
+			if err != nil {
+				fmt.Println("Error: Invalid vacation hours number")
+				os.Exit(1)
+			}
+			config.VacationHours.YearlyTarget = vacationHours
+
+			// Set database location (empty string means use default)
+			config.DBLocation = dbLocationStr
 
 			// Save the configuration
-			huh.NewGroup(
-				huh.NewNote().
-					Title("Saving Configuration").
-					Description("Saving your configuration..."),
-			),
-		).WithAccessible(accessible)
-
-		err := form.Run()
-		if err != nil {
-			fmt.Println("Error running form:", err)
-			os.Exit(1)
-		}
-
-		// Convert port string to integer
-		port, err := strconv.Atoi(portStr)
-		if err != nil {
-			fmt.Println("Error: Invalid port number")
-			os.Exit(1)
-		}
-		config.APIPort = port
-
-		// Convert training hours string to integer
-		trainingHours, err := strconv.Atoi(trainingHoursStr)
-		if err != nil {
-			fmt.Println("Error: Invalid training hours number")
-			os.Exit(1)
-		}
-		config.TrainingHours.YearlyTarget = trainingHours
-
-		// Convert vacation hours string to integer
-		vacationHours, err := strconv.Atoi(vacationHoursStr)
-		if err != nil {
-			fmt.Println("Error: Invalid vacation hours number")
-			os.Exit(1)
-		}
-		config.VacationHours.YearlyTarget = vacationHours
-
-		// Set database location (empty string means use default)
-		config.DBLocation = dbLocationStr
-
-		// Save the configuration
-		SaveConfig(config)
-	} else {
+			SaveConfig(config)
+		} else {
 			// File exists but there's another error (permissions, etc.)
 			logging.Log("Warning: Error checking config file at %s: %v", configPath, err)
 			logging.Log("Continuing anyway...")
@@ -555,13 +559,13 @@ func GetConfigPath() string {
 // SaveConfig saves the configuration to a file
 func SaveConfig(config Config) error {
 	configPath := GetConfigPath()
-	
+
 	// Ensure the directory exists
 	configDir := filepath.Dir(configPath)
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
-	
+
 	configJSON, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
@@ -661,7 +665,7 @@ func GetDBPath() string {
 		}
 		return dbPath
 	}
-	
+
 	// Check config file
 	config, err := GetConfig()
 	if err == nil && config.DBLocation != "" {
@@ -674,7 +678,7 @@ func GetDBPath() string {
 		}
 		return config.DBLocation
 	}
-	
+
 	// Default location
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -750,4 +754,70 @@ func GetAPIBaseURL() string {
 	}
 
 	return ""
+}
+
+// SetRuntimeDBType sets the runtime database type
+func SetRuntimeDBType(dbType string) {
+	runtimeDBType = dbType
+	logging.Log("Runtime database type set to: %v", dbType)
+}
+
+// SetRuntimePostgresURL sets the runtime PostgreSQL URL
+func SetRuntimePostgresURL(url string) {
+	runtimePostgresURL = url
+	logging.Log("Runtime PostgreSQL URL set")
+}
+
+// GetDBType returns the database type: "sqlite" or "postgres"
+func GetDBType() string {
+	// Check runtime flag first (CLI)
+	if runtimeDBType != "" {
+		return runtimeDBType
+	}
+
+	// Check environment variable
+	if envType := os.Getenv("TIMESHEETZ_DB_TYPE"); envType != "" {
+		if envType == "sqlite" || envType == "postgres" {
+			return envType
+		}
+		logging.Log("Invalid TIMESHEETZ_DB_TYPE '%s', defaulting to 'sqlite'", envType)
+	}
+
+	// Fall back to config file
+	config, err := GetConfig()
+	if err != nil {
+		return "sqlite" // Default
+	}
+
+	if config.DBType == "" {
+		return "sqlite"
+	}
+
+	if config.DBType != "sqlite" && config.DBType != "postgres" {
+		logging.Log("Invalid dbType '%s' in config, defaulting to 'sqlite'", config.DBType)
+		return "sqlite"
+	}
+
+	return config.DBType
+}
+
+// GetPostgresURL returns the PostgreSQL connection URL
+func GetPostgresURL() string {
+	// Check runtime flag first (CLI)
+	if runtimePostgresURL != "" {
+		return runtimePostgresURL
+	}
+
+	// Check environment variable
+	if envURL := os.Getenv("TIMESHEETZ_POSTGRES_URL"); envURL != "" {
+		return envURL
+	}
+
+	// Fall back to config file
+	config, err := GetConfig()
+	if err != nil {
+		return ""
+	}
+
+	return config.PostgresURL
 }

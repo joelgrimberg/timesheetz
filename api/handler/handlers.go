@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 	"timesheet/internal/config"
+	"timesheet/internal/datalayer"
 	"timesheet/internal/db"
 
 	"github.com/gin-gonic/gin"
@@ -12,7 +13,8 @@ import (
 
 // GetTimesheet handles GET requests for timesheet entries
 func GetTimesheet(c *gin.Context) {
-	entries, err := db.GetAllTimesheetEntries(0, 0)
+	dl := datalayer.GetDataLayer()
+	entries, err := dl.GetAllTimesheetEntries(0, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -28,7 +30,8 @@ func CreateTimesheet(c *gin.Context) {
 		return
 	}
 
-	if err := db.AddTimesheetEntry(entry); err != nil {
+	dl := datalayer.GetDataLayer()
+	if err := dl.AddTimesheetEntry(entry); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -58,7 +61,8 @@ func UpdateTimesheet(c *gin.Context) {
 		"holiday_hours":  entry.Holiday_hours,
 		"sick_hours":     entry.Sick_hours,
 	}
-	if err := db.UpdateTimesheetEntryById(id, updateData); err != nil {
+	dl := datalayer.GetDataLayer()
+	if err := dl.UpdateTimesheetEntryById(id, updateData); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -74,7 +78,8 @@ func DeleteTimesheet(c *gin.Context) {
 		return
 	}
 
-	if err := db.DeleteTimesheetEntry(id); err != nil {
+	dl := datalayer.GetDataLayer()
+	if err := dl.DeleteTimesheetEntry(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -96,7 +101,8 @@ func ExportExcel(c *gin.Context) {
 
 // GetLastClientName handles GET requests for the last client name
 func GetLastClientName(c *gin.Context) {
-	clientName, err := db.GetLastClientName()
+	dl := datalayer.GetDataLayer()
+	clientName, err := dl.GetLastClientName()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -118,7 +124,8 @@ func GetTrainingBudget(c *gin.Context) {
 		return
 	}
 
-	entries, err := db.GetTrainingBudgetEntriesForYear(yearInt)
+	dl := datalayer.GetDataLayer()
+	entries, err := dl.GetTrainingBudgetEntriesForYear(yearInt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -134,7 +141,8 @@ func CreateTrainingBudget(c *gin.Context) {
 		return
 	}
 
-	if err := db.AddTrainingBudgetEntry(entry); err != nil {
+	dl := datalayer.GetDataLayer()
+	if err := dl.AddTrainingBudgetEntry(entry); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -150,7 +158,8 @@ func UpdateTrainingBudget(c *gin.Context) {
 		return
 	}
 
-	if err := db.UpdateTrainingBudgetEntry(entry); err != nil {
+	dl := datalayer.GetDataLayer()
+	if err := dl.UpdateTrainingBudgetEntry(entry); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -172,7 +181,8 @@ func DeleteTrainingBudget(c *gin.Context) {
 		return
 	}
 
-	if err := db.DeleteTrainingBudgetEntry(idInt); err != nil {
+	dl := datalayer.GetDataLayer()
+	if err := dl.DeleteTrainingBudgetEntry(idInt); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -195,7 +205,8 @@ func GetTrainingHours(c *gin.Context) {
 	}
 
 	// Get spent hours from timesheet entries
-	entries, err := db.GetTrainingEntriesForYear(yearInt)
+	dl := datalayer.GetDataLayer()
+	entries, err := dl.GetTrainingEntriesForYear(yearInt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -240,7 +251,8 @@ func GetVacationHours(c *gin.Context) {
 	}
 
 	// Get comprehensive vacation summary including carryover
-	summary, err := db.GetVacationSummaryForYear(yearInt)
+	dl := datalayer.GetDataLayer()
+	summary, err := dl.GetVacationSummaryForYear(yearInt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -283,8 +295,10 @@ func GetOverview(c *gin.Context) {
 		return
 	}
 
+	dl := datalayer.GetDataLayer()
+
 	// Calculate training hours
-	trainingEntries, err := db.GetTrainingEntriesForYear(yearInt)
+	trainingEntries, err := dl.GetTrainingEntriesForYear(yearInt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get training entries"})
 		return
@@ -299,7 +313,7 @@ func GetOverview(c *gin.Context) {
 	trainingDaysLeft := float64(trainingHoursLeft) / 9.0
 
 	// Calculate vacation hours using summary (includes carryover)
-	vacationSummary, err := db.GetVacationSummaryForYear(yearInt)
+	vacationSummary, err := dl.GetVacationSummaryForYear(yearInt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get vacation summary"})
 		return
@@ -343,7 +357,8 @@ func GetVacationCarryover(c *gin.Context) {
 		return
 	}
 
-	carryover, err := db.GetVacationCarryoverForYear(yearInt)
+	dl := datalayer.GetDataLayer()
+	carryover, err := dl.GetVacationCarryoverForYear(yearInt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -360,7 +375,8 @@ func SetVacationCarryover(c *gin.Context) {
 		return
 	}
 
-	if err := db.SetVacationCarryover(carryover); err != nil {
+	dl := datalayer.GetDataLayer()
+	if err := dl.SetVacationCarryover(carryover); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -382,7 +398,8 @@ func DeleteVacationCarryover(c *gin.Context) {
 		return
 	}
 
-	if err := db.DeleteVacationCarryover(yearInt); err != nil {
+	dl := datalayer.GetDataLayer()
+	if err := dl.DeleteVacationCarryover(yearInt); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -406,7 +423,8 @@ func GetVacationSummary(c *gin.Context) {
 		}
 	}
 
-	summary, err := db.GetVacationSummaryForYear(yearInt)
+	dl := datalayer.GetDataLayer()
+	summary, err := dl.GetVacationSummaryForYear(yearInt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

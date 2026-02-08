@@ -175,6 +175,30 @@ func (d *DualLayer) UpdateTimesheetEntry(entry TimesheetEntry) error {
 	return remoteErr
 }
 
+// UpdateTimesheetEntryById writes to both sources
+func (d *DualLayer) UpdateTimesheetEntryById(id string, data map[string]any) error {
+	localErr := d.local.UpdateTimesheetEntryById(id, data)
+	remoteErr := d.remote.UpdateTimesheetEntryById(id, data)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB update by ID failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API update by ID failed: %v", remoteErr)
+	}
+
+	// If both fail, return error
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote updates failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+
+	// Return local error if it exists, otherwise remote error (or nil)
+	if localErr != nil {
+		return fmt.Errorf("local update failed: %w", localErr)
+	}
+	return remoteErr
+}
+
 // DeleteTimesheetEntryByDate deletes from both sources
 func (d *DualLayer) DeleteTimesheetEntryByDate(date string) error {
 	localErr := d.local.DeleteTimesheetEntryByDate(date)

@@ -62,6 +62,11 @@ func Close() {
 	logging.Log("Disconnected from the database 🍺")
 }
 
+// GetSQLiteDB returns the raw SQLite database connection for sync operations
+func GetSQLiteDB() *sql.DB {
+	return db
+}
+
 // TimesheetEntry represents a row in the timesheet table
 type TimesheetEntry struct {
 	Id             int
@@ -226,6 +231,36 @@ func InitializeDatabase(dbPath string) error {
 			logging.Log("Note: Could not add client_id column (may already exist): %v", err)
 		}
 	}
+
+	// Migration: Add updated_at columns for sync support
+	syncMigrations := []struct {
+		table  string
+		column string
+	}{
+		{"timesheet", "created_at"},
+		{"timesheet", "updated_at"},
+		{"training_budget", "created_at"},
+		{"training_budget", "updated_at"},
+		{"clients", "updated_at"},
+		{"client_rates", "updated_at"},
+	}
+
+	for _, m := range syncMigrations {
+		// SQLite doesn't allow DEFAULT CURRENT_TIMESTAMP in ALTER TABLE, so we use NULL default
+		sql := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s TEXT;`, m.table, m.column)
+		_, err = db.Exec(sql)
+		if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			logging.Log("Note: Could not add %s.%s column: %v", m.table, m.column, err)
+		}
+	}
+
+	// Set default values for existing rows that have NULL timestamps
+	_, _ = db.Exec(`UPDATE timesheet SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL;`)
+	_, _ = db.Exec(`UPDATE timesheet SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
+	_, _ = db.Exec(`UPDATE training_budget SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL;`)
+	_, _ = db.Exec(`UPDATE training_budget SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
+	_, _ = db.Exec(`UPDATE clients SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
+	_, _ = db.Exec(`UPDATE client_rates SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
 
 	// Set database permissions AFTER the file is created (skip for in-memory databases)
 	if dbPath != ":memory:" {

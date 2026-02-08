@@ -227,39 +227,39 @@ func (m TextInputModal) View() string {
 
 // ConfigModel represents the configuration view
 type ConfigModel struct {
-	table            table.Model
-	keys             ConfigKeyMap
-	help             help.Model
-	showHelp         bool
-	showModeModal    bool
-	modeModal        *ModeModalModel
-	languageModal    *LanguageModalModel
+	table             table.Model
+	keys              ConfigKeyMap
+	help              help.Model
+	showHelp          bool
+	showModeModal     bool
+	modeModal         *ModeModalModel
+	languageModal     *LanguageModalModel
 	documentTypeModal *DocumentTypeModalModel
-	boolModal        *BoolModalModel
-	textModal        *TextInputModal
-	overlay          *overlay.Model
+	boolModal         *BoolModalModel
+	textModal         *TextInputModal
+	overlay           *overlay.Model
 
 	// Row indices for editable fields
-	nameRowIdx              int
-	companyRowIdx           int
-	freeSpeechRowIdx        int
-	startAPIServerRowIdx    int
-	apiPortRowIdx           int
-	apiModeRowIdx           int
-	apiBaseURLRowIdx        int
-	dbLocationRowIdx        int
-	developmentModeRowIdx   int
-	documentTypeRowIdx      int
-	exportLangRowIdx        int
-	sendToOthersRowIdx      int
-	recipientEmailRowIdx    int
-	senderEmailRowIdx       int
-	replyToEmailRowIdx      int
-	resendAPIKeyRowIdx      int
-	trainingTargetRowIdx    int
-	trainingCategoryRowIdx  int
-	vacationTargetRowIdx    int
-	vacationCategoryRowIdx  int
+	nameRowIdx             int
+	companyRowIdx          int
+	freeSpeechRowIdx       int
+	startAPIServerRowIdx   int
+	apiPortRowIdx          int
+	apiModeRowIdx          int
+	apiBaseURLRowIdx       int
+	dbLocationRowIdx       int
+	developmentModeRowIdx  int
+	documentTypeRowIdx     int
+	exportLangRowIdx       int
+	sendToOthersRowIdx     int
+	recipientEmailRowIdx   int
+	senderEmailRowIdx      int
+	replyToEmailRowIdx     int
+	resendAPIKeyRowIdx     int
+	trainingTargetRowIdx   int
+	trainingCategoryRowIdx int
+	vacationTargetRowIdx   int
+	vacationCategoryRowIdx int
 
 	// Update checking fields
 	latestVersion   string
@@ -798,28 +798,76 @@ func maskAPIKey(key string) string {
 	return key[:4] + "..." + key[len(key)-4:]
 }
 
+// maskPostgresURL masks the password in a PostgreSQL connection URL
+func maskPostgresURL(url string) string {
+	// URL format: postgres://user:password@host:port/db?params
+	// We want to show: postgres://user:****@host:port/db
+	if len(url) < 11 {
+		return url
+	}
+
+	// Find the :// prefix
+	prefixEnd := 0
+	for i := 0; i < len(url)-2; i++ {
+		if url[i:i+3] == "://" {
+			prefixEnd = i + 3
+			break
+		}
+	}
+	if prefixEnd == 0 {
+		return url
+	}
+
+	// Find the @ symbol (end of credentials)
+	atIdx := -1
+	for i := prefixEnd; i < len(url); i++ {
+		if url[i] == '@' {
+			atIdx = i
+			break
+		}
+	}
+	if atIdx == -1 {
+		return url // No credentials in URL
+	}
+
+	// Find the : between user and password
+	colonIdx := -1
+	for i := prefixEnd; i < atIdx; i++ {
+		if url[i] == ':' {
+			colonIdx = i
+			break
+		}
+	}
+	if colonIdx == -1 {
+		return url // No password in URL
+	}
+
+	// Reconstruct with masked password
+	return url[:colonIdx+1] + "****" + url[atIdx:]
+}
+
 // configRowIndices holds the row indices for editable fields
 type configRowIndices struct {
-	nameRowIdx              int
-	companyRowIdx           int
-	freeSpeechRowIdx        int
-	startAPIServerRowIdx    int
-	apiPortRowIdx           int
-	apiModeRowIdx           int
-	apiBaseURLRowIdx        int
-	dbLocationRowIdx        int
-	developmentModeRowIdx   int
-	documentTypeRowIdx      int
-	exportLangRowIdx        int
-	sendToOthersRowIdx      int
-	recipientEmailRowIdx    int
-	senderEmailRowIdx       int
-	replyToEmailRowIdx      int
-	resendAPIKeyRowIdx      int
-	trainingTargetRowIdx    int
-	trainingCategoryRowIdx  int
-	vacationTargetRowIdx    int
-	vacationCategoryRowIdx  int
+	nameRowIdx             int
+	companyRowIdx          int
+	freeSpeechRowIdx       int
+	startAPIServerRowIdx   int
+	apiPortRowIdx          int
+	apiModeRowIdx          int
+	apiBaseURLRowIdx       int
+	dbLocationRowIdx       int
+	developmentModeRowIdx  int
+	documentTypeRowIdx     int
+	exportLangRowIdx       int
+	sendToOthersRowIdx     int
+	recipientEmailRowIdx   int
+	senderEmailRowIdx      int
+	replyToEmailRowIdx     int
+	resendAPIKeyRowIdx     int
+	trainingTargetRowIdx   int
+	trainingCategoryRowIdx int
+	vacationTargetRowIdx   int
+	vacationCategoryRowIdx int
 }
 
 // buildTableRows builds the configuration table rows with update info
@@ -877,13 +925,32 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 		rows = append(rows, table.Row{"  API Base URL", cfg.APIBaseURL})
 	}
 
-	// Database Location
+	// Database Configuration
 	rows = append(rows, table.Row{"Database", ""})
-	indices.dbLocationRowIdx = len(rows)
-	if cfg.DBLocation == "" {
-		rows = append(rows, table.Row{"  DB Location", "(default)"})
+	// Show database type (read-only, set via CLI/env)
+	dbType := config.GetDBType()
+	if dbType == "postgres" {
+		rows = append(rows, table.Row{"  DB Type", "PostgreSQL"})
 	} else {
-		rows = append(rows, table.Row{"  DB Location", cfg.DBLocation})
+		rows = append(rows, table.Row{"  DB Type", "SQLite"})
+	}
+	indices.dbLocationRowIdx = len(rows)
+	if dbType == "postgres" {
+		// For PostgreSQL, show connection info (masked)
+		postgresURL := config.GetPostgresURL()
+		if postgresURL != "" {
+			// Mask the password in the URL for display
+			rows = append(rows, table.Row{"  Connection", maskPostgresURL(postgresURL)})
+		} else {
+			rows = append(rows, table.Row{"  Connection", "(not configured)"})
+		}
+	} else {
+		// For SQLite, show file location
+		if cfg.DBLocation == "" {
+			rows = append(rows, table.Row{"  DB Location", "(default)"})
+		} else {
+			rows = append(rows, table.Row{"  DB Location", cfg.DBLocation})
+		}
 	}
 
 	// Development Settings
@@ -1296,4 +1363,3 @@ func (m ConfigModel) View() string {
 
 	return content
 }
-

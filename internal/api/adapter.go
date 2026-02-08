@@ -31,6 +31,10 @@ func (a *ClientAdapter) UpdateTimesheetEntry(entry db.TimesheetEntry) error {
 	return a.client.UpdateTimesheetEntry(entry)
 }
 
+func (a *ClientAdapter) UpdateTimesheetEntryById(id string, data map[string]any) error {
+	return a.client.UpdateTimesheetEntryById(id, data)
+}
+
 func (a *ClientAdapter) DeleteTimesheetEntryByDate(date string) error {
 	return a.client.DeleteTimesheetEntryByDate(date)
 }
@@ -180,4 +184,3 @@ func (a *ClientAdapter) CalculateEarningsForMonth(year int, month int) (db.Earni
 func (a *ClientAdapter) GetClientWithRates(clientId int) (db.ClientWithRates, error) {
 	return a.client.GetClientWithRates(clientId)
 }
-

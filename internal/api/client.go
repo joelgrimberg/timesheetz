@@ -137,6 +137,13 @@ func (c *Client) UpdateTimesheetEntry(entry db.TimesheetEntry) error {
 	return err
 }
 
+// UpdateTimesheetEntryById updates specific fields of a timesheet entry by ID
+func (c *Client) UpdateTimesheetEntryById(id string, data map[string]any) error {
+	// Convert to a partial entry that the API expects
+	_, err := c.makeRequest("PUT", fmt.Sprintf("/api/timesheet/%s", id), data)
+	return err
+}
+
 // DeleteTimesheetEntryByDate deletes a timesheet entry by date
 func (c *Client) DeleteTimesheetEntryByDate(date string) error {
 	// First, get the entry to find its ID
@@ -561,16 +568,16 @@ func (c *Client) CalculateEarningsForYear(year int) (db.EarningsOverview, error)
 
 	// The API returns formatted data, we need to parse it
 	var response struct {
-		Year         int    `json:"year"`
-		Month        int    `json:"month"`
-		TotalHours   int    `json:"total_hours"`
+		Year          int    `json:"year"`
+		Month         int    `json:"month"`
+		TotalHours    int    `json:"total_hours"`
 		TotalEarnings string `json:"total_earnings"` // Formatted as Euro string
-		Entries      []struct {
+		Entries       []struct {
 			Date        string `json:"date"`
 			ClientName  string `json:"client_name"`
 			ClientHours int    `json:"client_hours"`
-			HourlyRate  string `json:"hourly_rate"`  // Formatted as Euro string
-			Earnings    string `json:"earnings"`     // Formatted as Euro string
+			HourlyRate  string `json:"hourly_rate"` // Formatted as Euro string
+			Earnings    string `json:"earnings"`    // Formatted as Euro string
 		} `json:"entries"`
 	}
 
@@ -671,11 +678,11 @@ func (c *Client) CalculateEarningsForMonth(year int, month int) (db.EarningsOver
 
 	// Same parsing logic as CalculateEarningsForYear
 	var response struct {
-		Year         int    `json:"year"`
-		Month        int    `json:"month"`
-		TotalHours   int    `json:"total_hours"`
+		Year          int    `json:"year"`
+		Month         int    `json:"month"`
+		TotalHours    int    `json:"total_hours"`
 		TotalEarnings string `json:"total_earnings"`
-		Entries      []struct {
+		Entries       []struct {
 			Date        string `json:"date"`
 			ClientName  string `json:"client_name"`
 			ClientHours int    `json:"client_hours"`
@@ -778,4 +785,3 @@ func GetClient() (*Client, error) {
 
 	return client, nil
 }
-

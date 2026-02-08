@@ -11,6 +11,7 @@ import (
 	"timesheet/internal/config"
 	"timesheet/internal/db"
 	"timesheet/internal/logging"
+	"timesheet/internal/sync"
 	"timesheet/internal/ui"
 	"timesheet/internal/version"
 
@@ -20,14 +21,17 @@ import (
 
 // Command line flags
 type flags struct {
-	noTUI   bool
-	tuiOnly bool
-	add     bool
-	init    bool
-	help    bool
-	verbose bool
-	dev     bool
-	port    int
+	noTUI       bool
+	tuiOnly     bool
+	add         bool
+	init        bool
+	help        bool
+	verbose     bool
+	dev         bool
+	port        int
+	dbType      string
+	postgresURL string
+	syncCmd     bool
 }
 
 // setupFlags defines and parses command line flags
@@ -41,7 +45,10 @@ func setupFlags() flags {
 	verboseFlag := flag.Bool("verbose", false, "Show detailed output")
 	devFlag := flag.Bool("dev", false, "Run in development mode (uses local database)")
 	portFlag := flag.Int("port", 0, "Specify the port for the API server")
+	dbTypeFlag := flag.String("db-type", "", "Database type: sqlite or postgres")
+	postgresURLFlag := flag.String("postgres-url", "", "PostgreSQL connection URL")
 	versionFlag := flag.Bool("version", false, "Show version and exit")
+	syncFlag := flag.Bool("sync", false, "Sync SQLite and PostgreSQL databases (requires both to be configured)")
 
 	// Custom usage message
 	flag.Usage = func() {
@@ -57,6 +64,8 @@ func setupFlags() flags {
 		fmt.Fprintf(os.Stderr, "  %s --verbose       Show detailed output\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --dev           Run in development mode\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --port 3000     Run API server on port 3000\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --db-type postgres --postgres-url \"postgres://...\"  Use PostgreSQL\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --sync --postgres-url \"postgres://...\"  Sync SQLite to PostgreSQL\n", os.Args[0])
 	}
 
 	// Parse flags
@@ -69,14 +78,17 @@ func setupFlags() flags {
 	}
 
 	return flags{
-		noTUI:   *noTUI,
-		tuiOnly: *tuiOnly,
-		add:     *addFlag,
-		init:    *initFlag,
-		help:    *helpFlag,
-		verbose: *verboseFlag,
-		dev:     *devFlag,
-		port:    *portFlag,
+		noTUI:       *noTUI,
+		tuiOnly:     *tuiOnly,
+		add:         *addFlag,
+		init:        *initFlag,
+		help:        *helpFlag,
+		verbose:     *verboseFlag,
+		dev:         *devFlag,
+		port:        *portFlag,
+		dbType:      *dbTypeFlag,
+		postgresURL: *postgresURLFlag,
+		syncCmd:     *syncFlag,
 	}
 }
 
@@ -124,48 +136,151 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-	
+
 	// If port flag is set, set runtime port
 	if flags.port != 0 {
 		log.Println("Port flag detected:", flags.port)
 		config.SetRuntimePort(flags.port)
 	}
 
-	// Initialize the database
-	dbPath := config.GetDBPath()
-	log.Printf("Database path: %s", dbPath)
+	// Handle database type selection
+	if flags.dbType != "" {
+		log.Println("Database type flag detected:", flags.dbType)
+		config.SetRuntimeDBType(flags.dbType)
+	}
+	if flags.postgresURL != "" {
+		log.Println("PostgreSQL URL flag detected")
+		config.SetRuntimePostgresURL(flags.postgresURL)
+	}
 
-	// Check if database exists, if not initialize it
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		log.Println("Database does not exist, initializing...")
-		if err := db.InitializeDatabase(dbPath); err != nil {
-			log.Fatalf("Error initializing database: %v", err)
+	// Get the database type to use
+	dbType := config.GetDBType()
+	log.Printf("Using database type: %s", dbType)
+
+	// Initialize database based on type
+	if dbType == "postgres" {
+		// PostgreSQL mode
+		postgresURL := config.GetPostgresURL()
+		if postgresURL == "" {
+			log.Fatal("PostgreSQL URL required when using postgres db type. Set via --postgres-url, TIMESHEETZ_POSTGRES_URL, or config file.")
 		}
-		log.Println("Database initialized successfully")
-	} else if err != nil {
-		log.Fatalf("Error checking database: %v", err)
+
+		log.Println("Attempting to connect to PostgreSQL...")
+		if err := db.ConnectPostgres(postgresURL); err != nil {
+			log.Fatalf("Failed to connect to PostgreSQL: %v", err)
+		}
+		defer db.ClosePostgres()
+		log.Println("PostgreSQL connected successfully")
+
+		// Initialize schema
+		log.Println("Initializing PostgreSQL schema...")
+		if err := db.InitializePostgresDatabase(); err != nil {
+			log.Fatalf("Error initializing PostgreSQL database: %v", err)
+		}
+		log.Println("PostgreSQL schema initialized successfully")
+
+		// Handle --init flag for postgres
+		if flags.init {
+			log.Println("PostgreSQL database reinitialized")
+			if len(flag.Args()) == 0 {
+				os.Exit(0)
+			}
+		}
 	} else {
-		log.Println("Database file exists")
+		// SQLite mode (default)
+		dbPath := config.GetDBPath()
+		log.Printf("Database path: %s", dbPath)
+
+		// Check if database exists, if not initialize it
+		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+			log.Println("Database does not exist, initializing...")
+			if err := db.InitializeDatabase(dbPath); err != nil {
+				log.Fatalf("Error initializing database: %v", err)
+			}
+			log.Println("Database initialized successfully")
+		} else if err != nil {
+			log.Fatalf("Error checking database: %v", err)
+		} else {
+			log.Println("Database file exists")
+		}
+
+		log.Println("Attempting to connect to database...")
+		if err := db.Connect(dbPath); err != nil {
+			log.Fatalf("Failed to connect to database: %v", err)
+		}
+		defer db.Close()
+		log.Println("Database connected successfully")
+
+		// Handle database initialization if requested
+		if flags.init {
+			log.Println("Init flag detected, reinitializing database...")
+			if err := db.InitializeDatabase(dbPath); err != nil {
+				log.Fatalf("Error initializing database: %v", err)
+			}
+			log.Println("Database reinitialized successfully")
+			// If just initializing, exit after success
+			if len(flag.Args()) == 0 {
+				os.Exit(0)
+			}
+		}
 	}
 
-	log.Println("Attempting to connect to database...")
-	if err := db.Connect(dbPath); err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
-	defer db.Close()
-	log.Println("Database connected successfully")
+	// Handle --sync command: sync between SQLite and PostgreSQL
+	// This needs special handling because we need BOTH databases
+	if flags.syncCmd {
+		log.Println("Sync command detected")
 
-	// Handle database initialization if requested
-	if flags.init {
-		log.Println("Init flag detected, reinitializing database...")
+		// For sync, we need both databases connected
+		postgresURL := config.GetPostgresURL()
+		if postgresURL == "" {
+			log.Fatal("PostgreSQL URL required for sync. Set via --postgres-url, TIMESHEETZ_POSTGRES_URL, or config file.")
+		}
+
+		// Always connect to SQLite for sync (regardless of db-type setting)
+		dbPath := db.GetDBPath()
+		log.Printf("Connecting to SQLite for sync at: %s", dbPath)
+		if err := db.Connect(dbPath); err != nil {
+			log.Fatalf("Failed to connect to SQLite: %v", err)
+		}
+		defer db.Close()
+
+		// Run SQLite migrations to ensure sync columns exist
 		if err := db.InitializeDatabase(dbPath); err != nil {
-			log.Fatalf("Error initializing database: %v", err)
+			log.Fatalf("Failed to initialize SQLite: %v", err)
 		}
-		log.Println("Database reinitialized successfully")
-		// If just initializing, exit after success
-		if len(flag.Args()) == 0 {
-			os.Exit(0)
+
+		// Always connect to PostgreSQL for sync
+		log.Println("Connecting to PostgreSQL for sync...")
+		if err := db.ConnectPostgres(postgresURL); err != nil {
+			log.Fatalf("Failed to connect to PostgreSQL: %v", err)
 		}
+		defer db.ClosePostgres()
+
+		// Initialize PostgreSQL schema
+		if err := db.InitializePostgresDatabase(); err != nil {
+			log.Fatalf("Error initializing PostgreSQL database: %v", err)
+		}
+
+		// Create sync service and run sync
+		fmt.Println("Starting database sync...")
+		syncService := sync.NewSyncService(db.GetSQLiteDB(), db.GetPostgresDB(), time.Minute)
+
+		if err := syncService.Sync(sync.SyncBidirectional); err != nil {
+			log.Fatalf("Sync failed: %v", err)
+		}
+
+		stats := syncService.GetLastSyncStats()
+		fmt.Printf("Sync completed in %v\n", stats.Duration)
+		fmt.Printf("  Records pushed (local -> remote): %d\n", stats.RecordsPushed)
+		fmt.Printf("  Records pulled (remote -> local): %d\n", stats.RecordsPulled)
+		fmt.Printf("  Tables processed: %d\n", stats.TablesProcessed)
+		if len(stats.Errors) > 0 {
+			fmt.Printf("  Errors: %d\n", len(stats.Errors))
+			for _, e := range stats.Errors {
+				fmt.Printf("    - %s\n", e)
+			}
+		}
+		os.Exit(0)
 	}
 
 	// Start the TUI if requested

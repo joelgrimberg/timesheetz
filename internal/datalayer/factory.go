@@ -17,6 +17,15 @@ func GetDataLayer() db.DataLayer {
 		return dataLayerInstance
 	}
 
+	// Check database type first - postgres takes precedence
+	dbType := config.GetDBType()
+	if dbType == "postgres" {
+		dataLayerInstance = &db.PostgresDBLayer{}
+		logging.Log("Using PostgreSQL database mode")
+		return dataLayerInstance
+	}
+
+	// For sqlite, check API mode for local/remote/dual behavior
 	apiMode := config.GetAPIMode()
 
 	switch apiMode {
@@ -62,4 +71,3 @@ func GetDataLayer() db.DataLayer {
 func ResetDataLayer() {
 	dataLayerInstance = nil
 }
-

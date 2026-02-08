@@ -12,6 +12,7 @@ type DataLayer interface {
 	GetTimesheetEntryByDate(date string) (TimesheetEntry, error)
 	AddTimesheetEntry(entry TimesheetEntry) error
 	UpdateTimesheetEntry(entry TimesheetEntry) error
+	UpdateTimesheetEntryById(id string, data map[string]any) error
 	DeleteTimesheetEntryByDate(date string) error
 	DeleteTimesheetEntry(id string) error
 	GetLastClientName() (string, error)
@@ -81,6 +82,10 @@ func (l *LocalDBLayer) AddTimesheetEntry(entry TimesheetEntry) error {
 
 func (l *LocalDBLayer) UpdateTimesheetEntry(entry TimesheetEntry) error {
 	return UpdateTimesheetEntry(entry)
+}
+
+func (l *LocalDBLayer) UpdateTimesheetEntryById(id string, data map[string]any) error {
+	return UpdateTimesheetEntryById(id, data)
 }
 
 func (l *LocalDBLayer) DeleteTimesheetEntryByDate(date string) error {
@@ -232,4 +237,3 @@ func (l *LocalDBLayer) CalculateEarningsForMonth(year int, month int) (EarningsO
 func (l *LocalDBLayer) GetClientWithRates(clientId int) (ClientWithRates, error) {
 	return GetClientWithRates(clientId)
 }
-

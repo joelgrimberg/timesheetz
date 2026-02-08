@@ -6,6 +6,7 @@ import (
 	"time"
 	"timesheet/internal/config"
 	"timesheet/internal/datalayer"
+	"timesheet/internal/sync"
 
 	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
@@ -38,6 +39,15 @@ type ClearStatusMsg struct {
 	ID int
 }
 
+// SyncTickMsg triggers a periodic sync
+type SyncTickMsg struct{}
+
+// SyncCompleteMsg is sent when sync completes
+type SyncCompleteMsg struct {
+	Stats sync.SyncStats
+	Err   error
+}
+
 // AppModel is the top-level model that contains both timesheet and form models
 type AppModel struct {
 	OverviewModel           OverviewModel
@@ -57,6 +67,14 @@ type AppModel struct {
 	refreshChan             chan RefreshMsg
 	statusMessage           string
 	statusMessageID         int
+	// Update check fields
+	updateAvailable bool
+	latestVersion   string
+	// Sync fields
+	syncService  *sync.SyncService
+	syncEnabled  bool
+	lastSyncTime time.Time
+	syncStatus   string // "Synced", "Syncing...", "Sync error", etc.
 }
 
 func NewAppModel(addMode bool) AppModel {
@@ -90,6 +108,9 @@ func (m AppModel) Init() tea.Cmd {
 	// Always check for updates on startup
 	updateCmd := CheckForUpdatesCmd()
 
+	// Initialize sync service (will check if postgres is configured)
+	syncInitCmd := InitSyncServiceCmd()
+
 	// Initialize the current mode
 	var modeCmd tea.Cmd
 	switch m.ActiveMode {
@@ -119,7 +140,7 @@ func (m AppModel) Init() tea.Cmd {
 		modeCmd = m.ConfigModel.Init()
 	}
 
-	return tea.Batch(updateCmd, modeCmd)
+	return tea.Batch(updateCmd, syncInitCmd, modeCmd)
 }
 
 // ReturnToTimesheetMsg is sent when returning to the timesheet view
@@ -285,13 +306,54 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle update check result - show status message
+	// Handle update check result - store result and show status for updates
 	if resultMsg, ok := msg.(updateCheckResultMsg); ok {
 		if resultMsg.err == nil {
+			m.updateAvailable = resultMsg.updateAvailable
+			m.latestVersion = resultMsg.latestVersion
 			if resultMsg.updateAvailable {
-				return m, SetStatus(fmt.Sprintf("New version %s available!", resultMsg.latestVersion))
+				return m, SetStatus(fmt.Sprintf("Update %s available!", resultMsg.latestVersion))
 			}
-			return m, SetStatus("No updates available")
+		}
+		return m, nil
+	}
+
+	// Handle sync initialization result
+	if initResult, ok := msg.(syncInitResultMsg); ok {
+		if initResult.enabled && initResult.service != nil {
+			m.syncEnabled = true
+			m.syncService = initResult.service
+			m.syncStatus = "Syncing..."
+			// Start first sync immediately and schedule periodic ticks
+			return m, tea.Batch(DoSyncCmd(m.syncService), SyncTickCmd(syncInterval))
+		}
+		return m, nil
+	}
+
+	// Handle sync tick - trigger sync if enabled
+	if _, ok := msg.(SyncTickMsg); ok {
+		if m.syncEnabled && m.syncService != nil {
+			m.syncStatus = "Syncing..."
+			return m, tea.Batch(DoSyncCmd(m.syncService), SyncTickCmd(syncInterval))
+		}
+		return m, nil
+	}
+
+	// Handle sync complete
+	if completeMsg, ok := msg.(SyncCompleteMsg); ok {
+		m.lastSyncTime = time.Now()
+		if completeMsg.Err != nil {
+			m.syncStatus = "Sync error"
+		} else {
+			m.syncStatus = FormatSyncStatus(m.lastSyncTime, false, false)
+			// Refresh views to show any synced data
+			m.OverviewModel = InitialOverviewModel()
+			m.TimesheetModel = InitialTimesheetModel()
+			m.TrainingModel = InitialTrainingModel()
+			m.TrainingBudgetModel = InitialTrainingBudgetModel()
+			m.VacationModel = InitialVacationModel()
+			m.ClientsModel = InitialClientsModel()
+			m.EarningsModel = InitialEarningsModel()
 		}
 		return m, nil
 	}
@@ -651,7 +713,32 @@ func (m AppModel) View() string {
 	default:
 		statusTitle = ""
 	}
-	statusMsg := m.statusMessage
+
+	// Determine what to show in the status message area:
+	// 1. If there's an active status message (temporary), show that
+	// 2. Else if sync is enabled, show sync status
+	// 3. Else show the database mode
+	var statusMsg string
+	if m.statusMessage != "" {
+		statusMsg = m.statusMessage
+	} else if m.syncEnabled {
+		// Show sync status with database info
+		syncStatus := FormatSyncStatus(m.lastSyncTime, m.syncStatus == "Syncing...", m.syncStatus == "Sync error")
+		dbType := config.GetDBType()
+		if dbType == "postgres" {
+			statusMsg = fmt.Sprintf("PostgreSQL | %s", syncStatus)
+		} else {
+			statusMsg = fmt.Sprintf("SQLite | %s", syncStatus)
+		}
+	} else {
+		// Show database mode
+		dbType := config.GetDBType()
+		if dbType == "postgres" {
+			statusMsg = "PostgreSQL"
+		} else {
+			statusMsg = "SQLite"
+		}
+	}
 
 	// Calculate padding to align status message to the right
 	leftWidth := lipgloss.Width(statusBarTitleStyle.Render(statusTitle))
