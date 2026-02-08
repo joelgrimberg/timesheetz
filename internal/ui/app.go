@@ -99,6 +99,10 @@ func NewAppModel(addMode bool) AppModel {
 	if addMode {
 		model.ActiveMode = FormMode
 		model.FormModel = InitialFormModel()
+	} else {
+		// Restore last active tab from persisted state
+		state := LoadAppState()
+		model.ActiveMode = StringToAppMode(state.ActiveTab)
 	}
 
 	return model
@@ -202,6 +206,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case ConfigMode:
 					m.ActiveMode = EarningsMode
 				}
+				// Save active tab state
+				SaveAppState(AppState{ActiveTab: AppModeToString(m.ActiveMode)})
 				// Refresh models when switching to them
 				if m.ActiveMode == TimesheetMode && prevMode != TimesheetMode {
 					m.TimesheetModel = InitialTimesheetModel()
@@ -235,6 +241,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Wrap around to the first tab
 					m.ActiveMode = TimesheetMode
 				}
+				// Save active tab state
+				SaveAppState(AppState{ActiveTab: AppModeToString(m.ActiveMode)})
 				// Refresh models when switching to them
 				if m.ActiveMode == TimesheetMode && prevMode != TimesheetMode {
 					m.TimesheetModel = InitialTimesheetModel()
@@ -249,10 +257,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "$":
 				// Switch to training budget view
 				m.ActiveMode = TrainingBudgetMode
+				SaveAppState(AppState{ActiveTab: AppModeToString(m.ActiveMode)})
 			case "v":
 				// Switch to vacation view (but not when in ClientsMode, where 'v' views rates)
 				if m.ActiveMode != ClientsMode {
 					m.ActiveMode = VacationMode
+					SaveAppState(AppState{ActiveTab: AppModeToString(m.ActiveMode)})
 				}
 			case "r":
 				// Refresh all views

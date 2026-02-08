@@ -679,17 +679,12 @@ func GetDBPath() string {
 		return config.DBLocation
 	}
 
-	// Default location
-	configDir, err := os.UserConfigDir()
+	// Default location: ~/.local/share/timesheetz/
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		// Fallback to home directory if UserConfigDir fails
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			log.Fatalf("Failed to get user home directory: %v", err)
-		}
-		configDir = filepath.Join(homeDir, ".config")
+		log.Fatalf("Failed to get user home directory: %v", err)
 	}
-	return filepath.Join(configDir, "timesheetz", "timesheet.db")
+	return filepath.Join(homeDir, ".local", "share", "timesheetz", "timesheet.db")
 }
 
 // GetAPIMode returns the API mode: "local", "dual", or "remote"
