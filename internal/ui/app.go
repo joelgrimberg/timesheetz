@@ -215,6 +215,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.OverviewModel = InitialOverviewModel()
 				} else if m.ActiveMode == TrainingMode && prevMode != TrainingMode {
 					m.TrainingModel = InitialTrainingModel()
+				} else if m.ActiveMode == VacationMode && prevMode != VacationMode {
+					m.VacationModel = InitialVacationModel()
 				} else if m.ActiveMode == ConfigMode && prevMode != ConfigMode {
 					m.ConfigModel = InitialConfigModel()
 					return m, m.ConfigModel.Init()
@@ -250,6 +252,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.OverviewModel = InitialOverviewModel()
 				} else if m.ActiveMode == TrainingMode && prevMode != TrainingMode {
 					m.TrainingModel = InitialTrainingModel()
+				} else if m.ActiveMode == VacationMode && prevMode != VacationMode {
+					m.VacationModel = InitialVacationModel()
 				} else if m.ActiveMode == ConfigMode && prevMode != ConfigMode {
 					m.ConfigModel = InitialConfigModel()
 					return m, m.ConfigModel.Init()
@@ -262,6 +266,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Switch to vacation view (but not when in ClientsMode, where 'v' views rates)
 				if m.ActiveMode != ClientsMode {
 					m.ActiveMode = VacationMode
+					m.VacationModel = InitialVacationModel()
 					SaveAppState(AppState{ActiveTab: AppModeToString(m.ActiveMode)})
 				}
 			case "r":
