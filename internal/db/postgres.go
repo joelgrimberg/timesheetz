@@ -330,6 +330,32 @@ func (p *PostgresDBLayer) DeleteVacationCarryover(year int) error {
 	return nil
 }
 
+// calculateAutoCarryoverPostgres computes the carryover for a year by looking at
+// the previous year's remaining vacation hours. Only called when no explicit
+// carryover record exists for the given year.
+func (p *PostgresDBLayer) calculateAutoCarryover(year int, yearlyTarget int) (int, error) {
+	// Get previous year's explicit carryover (don't recurse — only look one level back)
+	prevCarryover, err := p.GetVacationCarryoverForYear(year - 1)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get previous year carryover: %w", err)
+	}
+
+	// Get previous year's used hours
+	prevUsed, err := p.GetVacationHoursForYear(year - 1)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get previous year used hours: %w", err)
+	}
+
+	prevAvailable := yearlyTarget + prevCarryover.CarryoverHours
+	remaining := prevAvailable - prevUsed
+
+	// Don't carry over negative values
+	if remaining < 0 {
+		return 0, nil
+	}
+	return remaining, nil
+}
+
 func (p *PostgresDBLayer) GetVacationSummaryForYear(year int) (VacationSummary, error) {
 	summary := VacationSummary{Year: year}
 
@@ -339,11 +365,21 @@ func (p *PostgresDBLayer) GetVacationSummaryForYear(year int) (VacationSummary, 
 	}
 	summary.YearlyTarget = cfg.VacationHours.YearlyTarget
 
+	// Get carryover hours — auto-calculate if no explicit record exists
 	carryover, err := p.GetVacationCarryoverForYear(year)
 	if err != nil {
 		return summary, fmt.Errorf("failed to get carryover: %w", err)
 	}
-	summary.CarryoverHours = carryover.CarryoverHours
+	if carryover.Id == 0 {
+		// No explicit carryover record — calculate from previous year's remaining hours
+		autoCarryover, err := p.calculateAutoCarryover(year, summary.YearlyTarget)
+		if err != nil {
+			return summary, fmt.Errorf("failed to auto-calculate carryover: %w", err)
+		}
+		summary.CarryoverHours = autoCarryover
+	} else {
+		summary.CarryoverHours = carryover.CarryoverHours
+	}
 
 	usedHours, err := p.GetVacationHoursForYear(year)
 	if err != nil {

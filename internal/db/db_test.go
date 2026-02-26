@@ -1,9 +1,13 @@
 package db
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
+	"timesheet/internal/config"
 )
 
 func setupTestDB(t *testing.T) string {
@@ -778,5 +782,242 @@ func TestGetTrainingBudgetEntryByDate(t *testing.T) {
 	_, err = GetTrainingBudgetEntryByDate("2024-01-16")
 	if err == nil {
 		t.Error("Expected error for non-existent date")
+	}
+}
+
+// setupTestConfig creates a temporary config file with a given yearly target
+// and returns a cleanup function.
+func setupTestConfig(t *testing.T, yearlyTarget int) func() {
+	t.Helper()
+	tmpDir := t.TempDir()
+	tmpConfigPath := filepath.Join(tmpDir, "config.json")
+	testConfig := config.Config{
+		VacationHours: config.VacationHours{
+			YearlyTarget: yearlyTarget,
+			Category:     "Vacation",
+		},
+	}
+	config.SetConfigPathOverride(tmpConfigPath)
+	if err := config.SaveConfig(testConfig); err != nil {
+		t.Fatalf("Failed to save test config: %v", err)
+	}
+	return func() {
+		config.SetConfigPathOverride("")
+		os.RemoveAll(tmpDir)
+	}
+}
+
+func TestAutoCarryover_FromPreviousYear(t *testing.T) {
+	dbPath := setupTestDB(t)
+	defer teardownTestDB(t, dbPath)
+	cleanup := setupTestConfig(t, 187)
+	defer cleanup()
+
+	// Add 140 vacation hours in 2025
+	entries := []TimesheetEntry{
+		{Date: "2025-01-15", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-01-16", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-01-17", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-08-11", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-08-12", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-08-13", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-08-14", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-08-15", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-12-22", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-12-23", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-12-24", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-12-29", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-12-30", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-12-31", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-06-15", Client_name: "Vacation", Vacation_hours: 9},
+		{Date: "2025-06-16", Client_name: "Vacation", Vacation_hours: 5}, // total = 140
+	}
+	for _, e := range entries {
+		if err := AddTimesheetEntry(e); err != nil {
+			t.Fatalf("Failed to add entry: %v", err)
+		}
+	}
+
+	// Verify 2025 used hours
+	used, err := GetVacationHoursForYear(2025)
+	if err != nil {
+		t.Fatalf("Failed to get 2025 vacation hours: %v", err)
+	}
+	if used != 140 {
+		t.Fatalf("Expected 140 used hours in 2025, got %d", used)
+	}
+
+	// Get 2026 summary — no explicit carryover record exists, should auto-calculate
+	summary, err := GetVacationSummaryForYear(2026)
+	if err != nil {
+		t.Fatalf("Failed to get 2026 vacation summary: %v", err)
+	}
+
+	// 2025 remaining = 187 - 140 = 47 (no carryover into 2025)
+	expectedCarryover := 47
+	if summary.CarryoverHours != expectedCarryover {
+		t.Errorf("Expected auto-carryover of %d, got %d", expectedCarryover, summary.CarryoverHours)
+	}
+	if summary.TotalAvailable != 187+expectedCarryover {
+		t.Errorf("Expected total available %d, got %d", 187+expectedCarryover, summary.TotalAvailable)
+	}
+}
+
+func TestAutoCarryover_WithExplicitPrevYearCarryover(t *testing.T) {
+	dbPath := setupTestDB(t)
+	defer teardownTestDB(t, dbPath)
+	cleanup := setupTestConfig(t, 187)
+	defer cleanup()
+
+	// Set explicit carryover for 2025 (from 2024)
+	err := SetVacationCarryover(VacationCarryover{
+		Year:           2025,
+		CarryoverHours: 14,
+		SourceYear:     2024,
+		Notes:          "Carryover from 2024",
+	})
+	if err != nil {
+		t.Fatalf("Failed to set carryover: %v", err)
+	}
+
+	// Add 143 vacation hours in 2025
+	for i := 0; i < 15; i++ {
+		hours := 9
+		if i == 14 {
+			hours = 8 // 14*9 + 8 = 134... need 143
+		}
+		entry := TimesheetEntry{
+			Date:           "2025-" + strconv.Itoa(i/28+1) + "-" + strconv.Itoa(i%28+1),
+			Client_name:    "Vacation",
+			Vacation_hours: hours,
+		}
+		if err := AddTimesheetEntry(entry); err != nil {
+			t.Fatalf("Failed to add entry: %v", err)
+		}
+	}
+
+	// That gives us 14*9 + 8 = 134, we need 143. Let me fix the math.
+	// Actually let me just add precise entries.
+	// Clean up and redo.
+	db.Exec("DELETE FROM timesheet")
+
+	// 15 entries of 9 = 135, plus one of 8 = 143
+	for i := 0; i < 15; i++ {
+		date := "2025-" + fmt.Sprintf("%02d", i/28+1) + "-" + fmt.Sprintf("%02d", i%28+1)
+		entry := TimesheetEntry{
+			Date:           date,
+			Client_name:    "Vacation",
+			Vacation_hours: 9,
+		}
+		if err := AddTimesheetEntry(entry); err != nil {
+			t.Fatalf("Failed to add entry: %v", err)
+		}
+	}
+	// Add one more entry with 8 hours: 15*9 + 8 = 143
+	if err := AddTimesheetEntry(TimesheetEntry{
+		Date: "2025-02-01", Client_name: "Vacation", Vacation_hours: 8,
+	}); err != nil {
+		t.Fatalf("Failed to add entry: %v", err)
+	}
+
+	used, _ := GetVacationHoursForYear(2025)
+	if used != 143 {
+		t.Fatalf("Expected 143 used hours, got %d", used)
+	}
+
+	// 2026 auto-carryover: 187 + 14 (explicit 2025 carryover) - 143 = 58
+	summary, err := GetVacationSummaryForYear(2026)
+	if err != nil {
+		t.Fatalf("Failed to get 2026 summary: %v", err)
+	}
+
+	if summary.CarryoverHours != 58 {
+		t.Errorf("Expected auto-carryover of 58, got %d", summary.CarryoverHours)
+	}
+}
+
+func TestAutoCarryover_ExplicitOverridesAuto(t *testing.T) {
+	dbPath := setupTestDB(t)
+	defer teardownTestDB(t, dbPath)
+	cleanup := setupTestConfig(t, 187)
+	defer cleanup()
+
+	// Add some vacation in 2025
+	if err := AddTimesheetEntry(TimesheetEntry{
+		Date: "2025-06-15", Client_name: "Vacation", Vacation_hours: 9,
+	}); err != nil {
+		t.Fatalf("Failed to add entry: %v", err)
+	}
+
+	// Auto-carryover for 2026 would be 187 - 9 = 178
+	summary, err := GetVacationSummaryForYear(2026)
+	if err != nil {
+		t.Fatalf("Failed to get summary: %v", err)
+	}
+	if summary.CarryoverHours != 178 {
+		t.Errorf("Expected auto-carryover of 178, got %d", summary.CarryoverHours)
+	}
+
+	// Now set explicit carryover that overrides auto-calculation
+	err = SetVacationCarryover(VacationCarryover{
+		Year:           2026,
+		CarryoverHours: 50,
+		SourceYear:     2025,
+		Notes:          "Manual override",
+	})
+	if err != nil {
+		t.Fatalf("Failed to set carryover: %v", err)
+	}
+
+	// Should now use the explicit value, not auto-calculated
+	summary, err = GetVacationSummaryForYear(2026)
+	if err != nil {
+		t.Fatalf("Failed to get summary: %v", err)
+	}
+	if summary.CarryoverHours != 50 {
+		t.Errorf("Expected explicit carryover of 50, got %d", summary.CarryoverHours)
+	}
+}
+
+func TestAutoCarryover_NegativeRemainingClampsToZero(t *testing.T) {
+	dbPath := setupTestDB(t)
+	defer teardownTestDB(t, dbPath)
+	cleanup := setupTestConfig(t, 50)
+	defer cleanup()
+
+	// Use more vacation than available in 2025 (60 > 50)
+	for i := 0; i < 6; i++ {
+		if err := AddTimesheetEntry(TimesheetEntry{
+			Date:           "2025-0" + strconv.Itoa(i+1) + "-15",
+			Client_name:    "Vacation",
+			Vacation_hours: 10,
+		}); err != nil {
+			t.Fatalf("Failed to add entry: %v", err)
+		}
+	}
+
+	// 2026 auto-carryover: 50 - 60 = -10, should clamp to 0
+	summary, err := GetVacationSummaryForYear(2026)
+	if err != nil {
+		t.Fatalf("Failed to get summary: %v", err)
+	}
+	if summary.CarryoverHours != 0 {
+		t.Errorf("Expected 0 carryover (negative clamped), got %d", summary.CarryoverHours)
+	}
+}
+
+func TestAutoCarryover_NoPreviousYearData(t *testing.T) {
+	dbPath := setupTestDB(t)
+	defer teardownTestDB(t, dbPath)
+	cleanup := setupTestConfig(t, 187)
+	defer cleanup()
+
+	// No entries for 2025 at all — remaining = 187, carryover into 2026 = 187
+	summary, err := GetVacationSummaryForYear(2026)
+	if err != nil {
+		t.Fatalf("Failed to get summary: %v", err)
+	}
+	if summary.CarryoverHours != 187 {
+		t.Errorf("Expected 187 carryover (full unused year), got %d", summary.CarryoverHours)
 	}
 }

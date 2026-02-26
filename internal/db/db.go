@@ -654,6 +654,32 @@ func DeleteVacationCarryover(year int) error {
 	return nil
 }
 
+// calculateAutoCarryover computes the carryover for a year by looking at
+// the previous year's remaining vacation hours. This is only called when
+// no explicit carryover record exists for the given year.
+func calculateAutoCarryover(year int, yearlyTarget int) (int, error) {
+	// Get previous year's explicit carryover (don't recurse — only look one level back)
+	prevCarryover, err := GetVacationCarryoverForYear(year - 1)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get previous year carryover: %w", err)
+	}
+
+	// Get previous year's used hours
+	prevUsed, err := GetVacationHoursForYear(year - 1)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get previous year used hours: %w", err)
+	}
+
+	prevAvailable := yearlyTarget + prevCarryover.CarryoverHours
+	remaining := prevAvailable - prevUsed
+
+	// Don't carry over negative values
+	if remaining < 0 {
+		return 0, nil
+	}
+	return remaining, nil
+}
+
 // GetVacationSummaryForYear returns comprehensive vacation info for a year
 func GetVacationSummaryForYear(year int) (VacationSummary, error) {
 	summary := VacationSummary{Year: year}
@@ -665,12 +691,21 @@ func GetVacationSummaryForYear(year int) (VacationSummary, error) {
 	}
 	summary.YearlyTarget = cfg.VacationHours.YearlyTarget
 
-	// 2. Get carryover hours
+	// 2. Get carryover hours — auto-calculate if no explicit record exists
 	carryover, err := GetVacationCarryoverForYear(year)
 	if err != nil {
 		return summary, fmt.Errorf("failed to get carryover: %w", err)
 	}
-	summary.CarryoverHours = carryover.CarryoverHours
+	if carryover.Id == 0 {
+		// No explicit carryover record — calculate from previous year's remaining hours
+		autoCarryover, err := calculateAutoCarryover(year, summary.YearlyTarget)
+		if err != nil {
+			return summary, fmt.Errorf("failed to auto-calculate carryover: %w", err)
+		}
+		summary.CarryoverHours = autoCarryover
+	} else {
+		summary.CarryoverHours = carryover.CarryoverHours
+	}
 
 	// 3. Get used hours from timesheet
 	usedHours, err := GetVacationHoursForYear(year)
