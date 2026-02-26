@@ -2,6 +2,7 @@ package datalayer
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"timesheet/internal/config"
 	"timesheet/internal/db"
@@ -98,7 +99,7 @@ func TestGetDataLayer_Default(t *testing.T) {
 func TestResetDataLayer(t *testing.T) {
 	// Reset first
 	ResetDataLayer()
-	
+
 	// Get a layer first
 	os.Setenv("TIMESHEETZ_API_MODE", "local")
 	defer os.Unsetenv("TIMESHEETZ_API_MODE")
@@ -140,10 +141,11 @@ func TestGetDataLayer_ConfigFile(t *testing.T) {
 	os.Unsetenv("TIMESHEETZ_API_MODE")
 	os.Unsetenv("TIMESHEETZ_API_URL")
 
-	// Create a test config
-	configPath := config.GetConfigPath()
-	os.Remove(configPath) // Remove existing config
-	defer os.Remove(configPath)
+	// Use a temp directory so we never touch the real config file
+	tmpDir := t.TempDir()
+	tmpConfigPath := filepath.Join(tmpDir, "config.json")
+	config.SetConfigPathOverride(tmpConfigPath)
+	defer config.SetConfigPathOverride("")
 
 	testConfig := config.Config{
 		APIMode:    "local",

@@ -20,6 +20,16 @@ var runtimePort int
 var runtimeDBType string
 var runtimePostgresURL string
 
+// configPathOverride allows tests to redirect config file operations to a temp directory.
+// When empty, GetConfigPath uses the default ~/.config/timesheetz/config.json path.
+var configPathOverride string
+
+// SetConfigPathOverride sets a custom config file path (for testing).
+// Pass an empty string to revert to the default path.
+func SetConfigPathOverride(path string) {
+	configPathOverride = path
+}
+
 // TrainingHours represents the training hours configuration
 type TrainingHours struct {
 	YearlyTarget int    `json:"yearlyTarget"`
@@ -548,7 +558,11 @@ func RequireConfig() {
 
 // GetConfigPath returns the path to the config file
 // Uses XDG Base Directory Specification: ~/.config/timesheetz/config.json
+// Tests can override this via SetConfigPathOverride.
 func GetConfigPath() string {
+	if configPathOverride != "" {
+		return configPathOverride
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Failed to get user home directory: %v", err)

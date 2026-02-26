@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"timesheet/internal/config"
 	"timesheet/internal/db"
@@ -25,91 +23,18 @@ func setupHandlerTest(t *testing.T) string {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	// Backup and replace config file for testing
-	// Get the config path BEFORE any modifications
-	configPath := config.GetConfigPath()
-	backupPath := configPath + ".test.backup"
-	
-	// Backup existing config if it exists
-	hasBackup := false
-	if _, err := os.Stat(configPath); err == nil {
-		// Config file exists, backup it
-		if err := os.Rename(configPath, backupPath); err != nil {
-			t.Fatalf("Failed to backup config file: %v", err)
-		}
-		hasBackup = true
-	}
-	
-	// Ensure the directory exists
-	configDir := filepath.Dir(configPath)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		// Restore backup if directory creation fails
-		if hasBackup {
-			os.Rename(backupPath, configPath)
-		}
-		t.Fatalf("Failed to create config directory: %v", err)
-	}
+	// Redirect config to a temp directory so we never touch the real config file
+	tmpDir := t.TempDir()
+	tmpConfigPath := filepath.Join(tmpDir, "config.json")
+	config.SetConfigPathOverride(tmpConfigPath)
 
-	// Create test config - write directly to the path we determined
-	// instead of using SaveConfig which might use a different path
+	// Create test config
 	testConfig := config.Config{
 		TrainingHours: config.TrainingHours{YearlyTarget: 36},
 		VacationHours: config.VacationHours{YearlyTarget: 20},
 	}
-	
-	// Write config directly to ensure we use the same path
-	configJSON, err := json.MarshalIndent(testConfig, "", "  ")
-	if err != nil {
-		if hasBackup {
-			os.Rename(backupPath, configPath)
-		}
-		t.Fatalf("Failed to marshal test config: %v", err)
-	}
-	if err := os.WriteFile(configPath, configJSON, 0644); err != nil {
-		// Restore backup if write fails
-		if hasBackup {
-			os.Rename(backupPath, configPath)
-		}
-		t.Fatalf("Failed to write test config: %v", err)
-	}
-	
-	// Verify config file exists and is readable
-	if _, err := os.Stat(configPath); err != nil {
-		// Restore backup if verification fails
-		if hasBackup {
-			os.Rename(backupPath, configPath)
-		}
-		t.Fatalf("Config file does not exist at %s: %v", configPath, err)
-	}
-	
-	// Verify we can read it
-	readConfig, err := config.GetConfig()
-	if err != nil {
-		// Restore backup if read fails
-		if hasBackup {
-			os.Rename(backupPath, configPath)
-		}
-		t.Fatalf("Failed to read config after saving: %v", err)
-	}
-	if readConfig.TrainingHours.YearlyTarget != 36 {
-		// Restore backup if validation fails
-		if hasBackup {
-			os.Rename(backupPath, configPath)
-		}
-		t.Fatalf("Config not saved correctly, expected 36, got %d", readConfig.TrainingHours.YearlyTarget)
-	}
-
-	// Store backup info in a way we can retrieve it in teardown
-	// We'll use a file to track if we have a backup
-	// Store both the backup path AND the original config path to ensure we restore to the right location
-	if hasBackup {
-		backupMarker := configPath + ".has_backup"
-		backupInfo := backupPath + "\n" + configPath // Store both paths
-		if err := os.WriteFile(backupMarker, []byte(backupInfo), 0644); err != nil {
-			// If we can't write the marker, restore the backup now
-			os.Rename(backupPath, configPath)
-			t.Fatalf("Failed to write backup marker: %v", err)
-		}
+	if err := config.SaveConfig(testConfig); err != nil {
+		t.Fatalf("Failed to save test config: %v", err)
 	}
 
 	return dbPath
@@ -117,41 +42,7 @@ func setupHandlerTest(t *testing.T) string {
 
 func teardownHandlerTest(t *testing.T, dbPath string) {
 	db.Close()
-	// No need to remove in-memory database
-	
-	// Restore original config file if it was backed up
-	configPath := config.GetConfigPath()
-	backupMarker := configPath + ".has_backup"
-	
-	if backupInfo, err := os.ReadFile(backupMarker); err == nil {
-		// We have a backup, restore it
-		// Backup info contains: backupPath\noriginalConfigPath
-		lines := strings.Split(strings.TrimSpace(string(backupInfo)), "\n")
-		backupPath := lines[0]
-		originalConfigPath := configPath // Default to current path
-		if len(lines) > 1 {
-			originalConfigPath = lines[1] // Use stored original path
-		}
-		
-		// Check if backup file still exists
-		if _, err := os.Stat(backupPath); err == nil {
-			// Remove test config from wherever it is
-			os.Remove(configPath)
-			// Restore backup to original location
-			if err := os.Rename(backupPath, originalConfigPath); err != nil {
-				t.Logf("Warning: Failed to restore config backup from %s to %s: %v", backupPath, originalConfigPath, err)
-			}
-		} else {
-			t.Logf("Warning: Backup file %s does not exist, cannot restore", backupPath)
-		}
-		// Clean up marker
-		os.Remove(backupMarker)
-	} else {
-		// No backup, just remove test config (if it exists)
-		if _, err := os.Stat(configPath); err == nil {
-			os.Remove(configPath)
-		}
-	}
+	config.SetConfigPathOverride("")
 }
 
 func TestGetTimesheet(t *testing.T) {

@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -18,14 +19,24 @@ func disableLogging() func() {
 	}
 }
 
+// setupTestConfig redirects the config path to a temp directory and returns a cleanup function.
+func setupTestConfig(t *testing.T) func() {
+	t.Helper()
+	tmpDir := t.TempDir()
+	tmpConfigPath := filepath.Join(tmpDir, "config.json")
+	SetConfigPathOverride(tmpConfigPath)
+	return func() {
+		SetConfigPathOverride("")
+	}
+}
+
 func TestSaveAndGetUserConfig(t *testing.T) {
 	// Disable logging for this test
 	restoreLogging := disableLogging()
 	defer restoreLogging()
 
-	// Remove any existing config file to start fresh
-	configPath := GetConfigPath()
-	os.Remove(configPath)
+	cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Create a temporary config for testing
 	testConfig := Config{
@@ -36,9 +47,6 @@ func TestSaveAndGetUserConfig(t *testing.T) {
 
 	// Save the test config
 	SaveConfig(testConfig)
-
-	// Clean up the test file after the test
-	defer os.Remove(configPath)
 
 	// Get the user config
 	name, companyName, freeSpeech, err := GetUserConfig()
@@ -63,16 +71,14 @@ func TestGetAPIPort(t *testing.T) {
 	restoreLogging := disableLogging()
 	defer restoreLogging()
 
-	// Remove any existing config file to start fresh
-	configPath := GetConfigPath()
-	os.Remove(configPath)
+	cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Create a minimal config file with default port
 	testConfig := Config{
 		APIPort: 8080,
 	}
 	SaveConfig(testConfig)
-	defer os.Remove(configPath)
 
 	// Test default port from config
 	port := GetAPIPort()
@@ -104,9 +110,8 @@ func TestGetStartAPIServer(t *testing.T) {
 	restoreLogging := disableLogging()
 	defer restoreLogging()
 
-	// Remove any existing config file to start fresh
-	configPath := GetConfigPath()
-	os.Remove(configPath)
+	cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Test default value when no config exists
 	startServer := GetStartAPIServer()
@@ -119,7 +124,6 @@ func TestGetStartAPIServer(t *testing.T) {
 		StartAPIServer: true,
 	}
 	SaveConfig(testConfig)
-	defer os.Remove(configPath)
 
 	startServer = GetStartAPIServer()
 	if !startServer {
@@ -132,9 +136,8 @@ func TestGetDocumentType(t *testing.T) {
 	restoreLogging := disableLogging()
 	defer restoreLogging()
 
-	// Remove any existing config file to start fresh
-	configPath := GetConfigPath()
-	os.Remove(configPath)
+	cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Test default value when no config exists
 	docType := GetDocumentType()
@@ -147,7 +150,6 @@ func TestGetDocumentType(t *testing.T) {
 		SendDocumentType: "excel",
 	}
 	SaveConfig(testConfig)
-	defer os.Remove(configPath)
 
 	docType = GetDocumentType()
 	if docType != "excel" {
@@ -160,9 +162,8 @@ func TestGetEmailConfig(t *testing.T) {
 	restoreLogging := disableLogging()
 	defer restoreLogging()
 
-	// Remove any existing config file to start fresh
-	configPath := GetConfigPath()
-	os.Remove(configPath)
+	cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Test default values when no config exists
 	name, sendToOthers, recipient, sender, replyTo, apiKey, err := GetEmailConfig()
@@ -183,7 +184,6 @@ func TestGetEmailConfig(t *testing.T) {
 		ResendAPIKey:   "test_api_key",
 	}
 	SaveConfig(testConfig)
-	defer os.Remove(configPath)
 
 	name, sendToOthers, recipient, sender, replyTo, apiKey, err = GetEmailConfig()
 	if err != nil {
@@ -214,9 +214,8 @@ func TestGetDevelopmentMode(t *testing.T) {
 	restoreLogging := disableLogging()
 	defer restoreLogging()
 
-	// Remove any existing config file to start fresh
-	configPath := GetConfigPath()
-	os.Remove(configPath)
+	cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Test default value when no config exists
 	devMode := GetDevelopmentMode()
@@ -229,7 +228,6 @@ func TestGetDevelopmentMode(t *testing.T) {
 		DevelopmentMode: true,
 	}
 	SaveConfig(testConfig)
-	defer os.Remove(configPath)
 
 	devMode = GetDevelopmentMode()
 	if !devMode {
@@ -242,4 +240,6 @@ func TestGetDevelopmentMode(t *testing.T) {
 	if !devMode {
 		t.Error("Expected runtime development mode to be true")
 	}
-} 
+	// Reset runtime dev mode for other tests
+	SetRuntimeDevMode(false)
+}
