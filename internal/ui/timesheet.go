@@ -262,7 +262,7 @@ func InitialTimesheetModel() TimesheetModel {
 	}
 
 	// Create model
-	return TimesheetModel{
+	model := TimesheetModel{
 		table:        t,
 		keys:         DefaultTimesheetKeyMap(),
 		help:         help.New(),
@@ -273,6 +273,18 @@ func InitialTimesheetModel() TimesheetModel {
 		columnTotals: totals,
 		yankedEntry:  nil,
 	}
+
+	// Select today's date
+	today := now.Format("2006-01-02")
+	for i, row := range model.table.Rows() {
+		if row[0] == today {
+			model.table.SetCursor(i)
+			model.cursorRow = i
+			break
+		}
+	}
+
+	return model
 }
 
 // Create a timesheet model for a specific year/month and select a date
