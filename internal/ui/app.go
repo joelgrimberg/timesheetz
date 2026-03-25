@@ -492,6 +492,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.TrainingBudgetFormModel.Init()
 		}
 
+		// Handle edit entry message
+		if editMsg, ok := msg.(EditTrainingBudgetMsg); ok {
+			m.ActiveMode = TrainingBudgetFormMode
+			m.TrainingBudgetFormModel = InitialTrainingBudgetFormModelForEdit(editMsg.Entry)
+			return m, m.TrainingBudgetFormModel.Init()
+		}
+
 		// Update training budget model
 		trainingBudgetModel, cmd := m.TrainingBudgetModel.Update(msg)
 		m.TrainingBudgetModel = trainingBudgetModel.(TrainingBudgetModel)

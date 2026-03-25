@@ -18,11 +18,15 @@ type TrainingBudgetFormModel struct {
 	trainingName string
 	cost         string
 	err          error
+	isEditing    bool
+	entryID      int
 }
 
 func InitialTrainingBudgetFormModel() TrainingBudgetFormModel {
 	m := TrainingBudgetFormModel{
-		inputs: make([]textinput.Model, 3),
+		inputs:    make([]textinput.Model, 3),
+		isEditing: false,
+		entryID:   0,
 	}
 
 	var t textinput.Model
@@ -45,6 +49,20 @@ func InitialTrainingBudgetFormModel() TrainingBudgetFormModel {
 
 		m.inputs[i] = t
 	}
+
+	return m
+}
+
+// InitialTrainingBudgetFormModelForEdit creates a form pre-filled with entry data for editing
+func InitialTrainingBudgetFormModelForEdit(entry db.TrainingBudgetEntry) TrainingBudgetFormModel {
+	m := InitialTrainingBudgetFormModel()
+	m.isEditing = true
+	m.entryID = entry.Id
+
+	// Pre-fill the form fields
+	m.inputs[0].SetValue(entry.Date)
+	m.inputs[1].SetValue(entry.Training_name)
+	m.inputs[2].SetValue(fmt.Sprintf("%.2f", entry.Cost_without_vat))
 
 	return m
 }
@@ -72,9 +90,20 @@ func (m TrainingBudgetFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			dataLayer := datalayer.GetDataLayer()
-			if err := dataLayer.AddTrainingBudgetEntry(entry); err != nil {
-				m.err = err
-				return m, nil
+
+			if m.isEditing {
+				// Update existing entry
+				entry.Id = m.entryID
+				if err := dataLayer.UpdateTrainingBudgetEntry(entry); err != nil {
+					m.err = err
+					return m, nil
+				}
+			} else {
+				// Add new entry
+				if err := dataLayer.AddTrainingBudgetEntry(entry); err != nil {
+					m.err = err
+					return m, nil
+				}
 			}
 
 			// Return to training budget view
@@ -120,7 +149,11 @@ func (m TrainingBudgetFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m TrainingBudgetFormModel) View() string {
 	var s string
 
-	s += titleStyle.Render("Add Training Budget Entry") + "\n\n"
+	title := "Add Training Budget Entry"
+	if m.isEditing {
+		title = "Edit Training Budget Entry"
+	}
+	s += titleStyle.Render(title) + "\n\n"
 
 	for i := range m.inputs {
 		s += inputStyle.Render(m.inputs[i].Placeholder) + "\n"

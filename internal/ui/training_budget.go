@@ -26,6 +26,7 @@ type TrainingBudgetKeyMap struct {
 	Quit    key.Binding
 	Refresh key.Binding
 	Add     key.Binding
+	Edit    key.Binding
 	Clear   key.Binding
 	Yank    key.Binding
 	PrevTab key.Binding
@@ -66,6 +67,10 @@ func DefaultTrainingBudgetKeyMap() TrainingBudgetKeyMap {
 		Add: key.NewBinding(
 			key.WithKeys("a"),
 			key.WithHelp("a", "add entry"),
+		),
+		Edit: key.NewBinding(
+			key.WithKeys("e", "enter"),
+			key.WithHelp("e/↵", "edit entry"),
 		),
 		Clear: key.NewBinding(
 			key.WithKeys("c"),
@@ -112,6 +117,7 @@ func (k TrainingBudgetKeyMap) FullHelp() [][]key.Binding {
 		{
 			k.Refresh,
 			k.Add,
+			k.Edit,
 			k.Clear,
 			k.Yank,
 		},
@@ -142,6 +148,11 @@ type YankTrainingBudgetMsg struct {
 
 // AddTrainingBudgetMsg is sent when a new entry is added
 type AddTrainingBudgetMsg struct{}
+
+// EditTrainingBudgetMsg is sent when an entry is edited
+type EditTrainingBudgetMsg struct {
+	Entry db.TrainingBudgetEntry
+}
 
 // ChangeYearMsg is used to change the year
 type ChangeYearMsg struct {
@@ -322,6 +333,13 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.refreshCmd()
 		case key.Matches(msg, m.keys.Add):
 			return m, m.addEntryCmd()
+		case key.Matches(msg, m.keys.Edit):
+			cursorPos := m.table.Cursor()
+			// Don't allow editing the total row
+			if cursorPos < len(m.entries) && cursorPos >= 0 {
+				entry := m.entries[cursorPos]
+				return m, m.editEntryCmd(entry)
+			}
 		case key.Matches(msg, m.keys.Clear):
 			cursorPos := m.table.Cursor()
 			if cursorPos < len(m.table.Rows())-1 { // Don't allow clearing the total row
@@ -479,5 +497,11 @@ func (m TrainingBudgetModel) refreshCmd() tea.Cmd {
 func (m TrainingBudgetModel) addEntryCmd() tea.Cmd {
 	return func() tea.Msg {
 		return AddTrainingBudgetMsg{}
+	}
+}
+
+func (m TrainingBudgetModel) editEntryCmd(entry db.TrainingBudgetEntry) tea.Cmd {
+	return func() tea.Msg {
+		return EditTrainingBudgetMsg{Entry: entry}
 	}
 }
