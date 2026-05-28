@@ -1,0 +1,6 @@
+# makepkg build artifacts — these are derived, not source.
+pkg/
+src/
+*.tar.gz
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
