@@ -395,7 +395,7 @@ func (m TrainingBudgetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.table.SetCursor(len(rows) - 1)
 					}
 
-					return m, nil
+					return m, TriggerSync()
 				}
 			}
 		case key.Matches(msg, m.keys.Yank):

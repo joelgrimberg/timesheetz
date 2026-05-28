@@ -206,6 +206,7 @@ func (m ClientRatesModalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.err = err
 				} else {
 					m.loadRates()
+					return m, TriggerSync()
 				}
 			}
 		case key.Matches(msg, m.keys.Up):
@@ -272,7 +273,7 @@ func (m ClientRatesModalModel) updateAddMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loadRates()
 				m.mode = RatesViewMode
 				m.err = nil
-				return m, nil
+				return m, TriggerSync()
 			}
 
 			// Move to next input

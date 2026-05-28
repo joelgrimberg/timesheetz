@@ -328,7 +328,7 @@ func (m ClientsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Printf("Error updating client: %v", err)
 				}
 				m.loadClients()
-				return m, nil
+				return m, TriggerSync()
 			}
 		case key.Matches(msg, m.keys.ViewRates):
 			if len(m.clients) > 0 && m.table.Cursor() < len(m.clients) {

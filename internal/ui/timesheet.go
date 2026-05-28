@@ -566,7 +566,7 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Printf("Error moving entry: %v", err)
 			}
 
-			return m, tea.Printf("Entry moved: %s", row[2])
+			return m, tea.Batch(tea.Printf("Entry moved: %s", row[2]), TriggerSync())
 
 		case key.Matches(msg, m.keys.PasteEntry):
 			// Check if we have any yanked data
@@ -615,8 +615,11 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Printf("Error saving entry: %v", err)
 			}
 
-			// Refresh the table but maintain cursor position
-			return m, RefreshPreservingCursor(m.currentYear, m.currentMonth, cursorRow)
+			// Refresh the table but maintain cursor position; trigger sync.
+			return m, tea.Batch(
+				RefreshPreservingCursor(m.currentYear, m.currentMonth, cursorRow),
+				TriggerSync(),
+			)
 
 		case key.Matches(msg, m.keys.Help):
 			m.showHelp = !m.showHelp
@@ -649,8 +652,11 @@ func (m TimesheetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return m, tea.Printf("Error clearing entry: %v", err)
 			}
-			// Refresh the table but maintain cursor position
-			return m, RefreshPreservingCursor(m.currentYear, m.currentMonth, cursorRow)
+			// Refresh the table but maintain cursor position; trigger sync.
+			return m, tea.Batch(
+				RefreshPreservingCursor(m.currentYear, m.currentMonth, cursorRow),
+				TriggerSync(),
+			)
 
 		case key.Matches(msg, m.keys.PrevMonth):
 			// Calculate the previous month

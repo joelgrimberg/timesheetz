@@ -405,8 +405,9 @@ func (m FormModel) handleSubmit() tea.Cmd {
 		return tea.Quit
 	}
 
-	// Otherwise return to timesheet view
-	return ReturnToTimesheet(entry.Date)
+	// Otherwise return to timesheet view; trigger sync so the change
+	// reaches other devices without waiting for the periodic tick.
+	return tea.Batch(ReturnToTimesheet(entry.Date), TriggerSync())
 }
 
 // Helper functions

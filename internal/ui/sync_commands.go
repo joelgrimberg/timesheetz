@@ -10,7 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const syncInterval = 1 * time.Minute
+const syncInterval = 15 * time.Second
 
 // InitSyncServiceCmd initializes the sync service if both databases are available
 // Returns nil if sync is not possible (no postgres URL configured)
@@ -95,36 +95,29 @@ func DoSyncCmd(svc *sync.SyncService) tea.Cmd {
 	}
 }
 
-// FormatSyncStatus returns a human-readable sync status string
+// FormatSyncStatus returns a human-readable sync status string.
+// Successful syncs render as "Synced HH:MM" so the user always sees when
+// the most recent reconciliation happened.
 func FormatSyncStatus(lastSync time.Time, isSyncing bool, hasError bool) string {
 	if isSyncing {
-		return "Syncing..."
+		return "Syncing…"
 	}
-
 	if hasError {
 		return "Sync error"
 	}
-
 	if lastSync.IsZero() {
 		return "Not synced"
 	}
+	return fmt.Sprintf("Synced %s", lastSync.Format("15:04"))
+}
 
-	// Calculate time since last sync
-	elapsed := time.Since(lastSync)
+// TriggerSyncMsg requests an immediate sync. UI handlers dispatch this
+// after data-modifying actions so changes propagate to other devices
+// without waiting for the 15-second ticker.
+type TriggerSyncMsg struct{}
 
-	if elapsed < time.Minute {
-		return "Synced just now"
-	} else if elapsed < time.Hour {
-		minutes := int(elapsed.Minutes())
-		if minutes == 1 {
-			return "Synced 1m ago"
-		}
-		return fmt.Sprintf("Synced %dm ago", minutes)
-	} else {
-		hours := int(elapsed.Hours())
-		if hours == 1 {
-			return "Synced 1h ago"
-		}
-		return fmt.Sprintf("Synced %dh ago", hours)
-	}
+// TriggerSync returns a tea.Cmd that emits TriggerSyncMsg. Safe to batch
+// alongside any existing command at the end of a write handler.
+func TriggerSync() tea.Cmd {
+	return func() tea.Msg { return TriggerSyncMsg{} }
 }

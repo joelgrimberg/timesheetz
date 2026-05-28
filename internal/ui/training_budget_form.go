@@ -106,8 +106,8 @@ func (m TrainingBudgetFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Return to training budget view
-			return m, ReturnToTrainingBudget()
+			// Return to training budget view; trigger sync.
+			return m, tea.Batch(ReturnToTrainingBudget(), TriggerSync())
 		case "tab":
 			// Move to next input
 			m.nextInput()
@@ -129,7 +129,7 @@ func (m TrainingBudgetFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "esc":
-			// Return to training budget view
+			// Cancel: no data was changed, no sync trigger needed.
 			return m, ReturnToTrainingBudget()
 		}
 

@@ -94,10 +94,12 @@ func (m ClientFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Return to clients view
-			return m, func() tea.Msg {
-				return SwitchToClientsMsg{}
-			}
+			// Return to clients view; trigger sync so the change propagates
+			// without waiting for the periodic tick.
+			return m, tea.Batch(
+				func() tea.Msg { return SwitchToClientsMsg{} },
+				TriggerSync(),
+			)
 
 		case "tab":
 			// Toggle active status

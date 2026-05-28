@@ -338,7 +338,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if initResult.enabled && initResult.service != nil {
 			m.syncEnabled = true
 			m.syncService = initResult.service
-			m.syncStatus = "Syncing..."
+			m.syncStatus = "Syncing…"
 			// Start first sync immediately and schedule periodic ticks
 			return m, tea.Batch(DoSyncCmd(m.syncService), SyncTickCmd(syncInterval))
 		}
@@ -348,8 +348,18 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle sync tick - trigger sync if enabled
 	if _, ok := msg.(SyncTickMsg); ok {
 		if m.syncEnabled && m.syncService != nil {
-			m.syncStatus = "Syncing..."
+			m.syncStatus = "Syncing…"
 			return m, tea.Batch(DoSyncCmd(m.syncService), SyncTickCmd(syncInterval))
+		}
+		return m, nil
+	}
+
+	// Handle event-driven sync requests (after create/update/delete).
+	// The periodic ticker keeps running independently.
+	if _, ok := msg.(TriggerSyncMsg); ok {
+		if m.syncEnabled && m.syncService != nil {
+			m.syncStatus = "Syncing…"
+			return m, DoSyncCmd(m.syncService)
 		}
 		return m, nil
 	}
@@ -766,17 +776,32 @@ func (m AppModel) View() string {
 	// 2. Else if sync is enabled, show sync status
 	// 3. Else show the database mode
 	var statusMsg string
+	statusMsgPreStyled := false // when true, do not re-wrap with statusMessageStyle
 	if m.statusMessage != "" {
 		statusMsg = m.statusMessage
 	} else if m.syncEnabled {
-		// Show sync status with database info
-		syncStatus := FormatSyncStatus(m.lastSyncTime, m.syncStatus == "Syncing...", m.syncStatus == "Sync error")
-		dbType := config.GetDBType()
-		if dbType == "postgres" {
-			statusMsg = fmt.Sprintf("PostgreSQL | %s", syncStatus)
-		} else {
-			statusMsg = fmt.Sprintf("SQLite | %s", syncStatus)
+		// Show sync status with database info; color the sync portion by state.
+		isSyncing := m.syncStatus == "Syncing…"
+		hasError := m.syncStatus == "Sync error"
+		syncText := FormatSyncStatus(m.lastSyncTime, isSyncing, hasError)
+		var syncStyle lipgloss.Style
+		switch {
+		case hasError:
+			syncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true) // red
+		case isSyncing:
+			syncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // amber
+		case !m.lastSyncTime.IsZero() && time.Since(m.lastSyncTime) < 15*time.Second:
+			syncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("78")).Bold(true) // bright green
+		default:
+			syncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // dim
 		}
+		dbType := config.GetDBType()
+		dbLabel := "SQLite"
+		if dbType == "postgres" {
+			dbLabel = "PostgreSQL"
+		}
+		statusMsg = statusMessageStyle.Render(dbLabel+" | ") + syncStyle.Render(syncText)
+		statusMsgPreStyled = true
 	} else {
 		// Show database mode
 		dbType := config.GetDBType()
@@ -787,9 +812,15 @@ func (m AppModel) View() string {
 		}
 	}
 
-	// Calculate padding to align status message to the right
+	// Calculate padding to align status message to the right.
+	// When statusMsg is already pre-styled (sync state coloring), it carries
+	// its own ANSI codes and must not be re-wrapped by statusMessageStyle.
+	renderedStatus := statusMsg
+	if !statusMsgPreStyled {
+		renderedStatus = statusMessageStyle.Render(statusMsg)
+	}
 	leftWidth := lipgloss.Width(statusBarTitleStyle.Render(statusTitle))
-	rightWidth := lipgloss.Width(statusMessageStyle.Render(statusMsg))
+	rightWidth := lipgloss.Width(renderedStatus)
 	paddingWidth := tabsWidth - leftWidth - rightWidth - 4 // -4 for border padding
 	if paddingWidth < 1 {
 		paddingWidth = 1
@@ -797,7 +828,7 @@ func (m AppModel) View() string {
 	padding := strings.Repeat(" ", paddingWidth)
 
 	// Render status bar content
-	statusBarContent := statusBarTitleStyle.Render(statusTitle) + padding + statusMessageStyle.Render(statusMsg)
+	statusBarContent := statusBarTitleStyle.Render(statusTitle) + padding + renderedStatus
 	statusBar := statusBarStyle.Width(tabsWidth).Render(statusBarContent)
 
 	// Render the current view
