@@ -5,21 +5,21 @@
 class Timesheetz < Formula
   desc "Timesheet management with TUI and REST API - write hours like a unicorn"
   homepage "https://github.com/joelgrimberg/timesheetz"
-  version "1.37.0"
+  version "1.38.0"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.intel?
-      url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.37.0/timesheetz_Darwin_x86_64.tar.gz"
-      sha256 "939287074c9c141a0c6abbf4e7362eb67117297fbf7c2a200594654c431b53e9"
+      url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.38.0/timesheetz_Darwin_x86_64.tar.gz"
+      sha256 "65cf57ffb99e5a4589dbe05e0a6788fa78b62c1dab25a33ca2fbb00c682dcfb4"
 
       define_method(:install) do
         bin.install "timesheet" => "timesheetz"
       end
     end
     if Hardware::CPU.arm?
-      url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.37.0/timesheetz_Darwin_arm64.tar.gz"
-      sha256 "cb1d33145a778355af04c0c0653f8e35ec2e2be8d4205b3b6ea00b1856e0b7a0"
+      url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.38.0/timesheetz_Darwin_arm64.tar.gz"
+      sha256 "e1a19721e122d2c6ed453283c4112a6443c4960bdd575ed64b651c0a24b6bd03"
 
       define_method(:install) do
         bin.install "timesheet" => "timesheetz"
@@ -29,15 +29,15 @@ class Timesheetz < Formula
 
   on_linux do
     if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
-      url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.37.0/timesheetz_Linux_x86_64.tar.gz"
-      sha256 "8e63f907059f51fabe4f6326b23458def854bc94078b35b1a73fa5ea5d7cdd8e"
+      url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.38.0/timesheetz_Linux_x86_64.tar.gz"
+      sha256 "ba19264ed0181daace6067544a6c962ada2260bf12c7267987e5b7c7c22ad1d5"
       define_method(:install) do
         bin.install "timesheet" => "timesheetz"
       end
     end
     if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-      url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.37.0/timesheetz_Linux_arm64.tar.gz"
-      sha256 "e174432a45baf47a1ec012f0b9d6b9e67792a4f5b489e1ab07aa155de5506e37"
+      url "https://github.com/joelgrimberg/timesheetz/releases/download/v1.38.0/timesheetz_Linux_arm64.tar.gz"
+      sha256 "de979b905c3f991d2c279cf60c1d0b6dd9566c64d730406507b205eb002fb067"
       define_method(:install) do
         bin.install "timesheet" => "timesheetz"
       end
