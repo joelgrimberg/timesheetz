@@ -3,9 +3,11 @@ package ui
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"timesheet/internal/config"
+	"timesheet/internal/dbcheck"
 	"timesheet/internal/updater"
 	"timesheet/internal/version"
 
@@ -235,6 +237,7 @@ type ConfigModel struct {
 	modeModal         *ModeModalModel
 	languageModal     *LanguageModalModel
 	documentTypeModal *DocumentTypeModalModel
+	dbTypeModal       *DBTypeModalModel
 	boolModal         *BoolModalModel
 	textModal         *TextInputModal
 	overlay           *overlay.Model
@@ -247,7 +250,10 @@ type ConfigModel struct {
 	apiPortRowIdx          int
 	apiModeRowIdx          int
 	apiBaseURLRowIdx       int
+	dbTypeRowIdx           int
 	dbLocationRowIdx       int
+	connectionRowIdx       int
+	testConnRowIdx         int
 	developmentModeRowIdx  int
 	documentTypeRowIdx     int
 	exportLangRowIdx       int
@@ -270,7 +276,7 @@ type ConfigModel struct {
 
 // IsEditing returns true if a modal is active (text input or mode selection)
 func (m ConfigModel) IsEditing() bool {
-	return m.textModal != nil || m.overlay != nil || m.languageModal != nil || m.documentTypeModal != nil || m.boolModal != nil
+	return m.textModal != nil || m.overlay != nil || m.languageModal != nil || m.documentTypeModal != nil || m.dbTypeModal != nil || m.boolModal != nil
 }
 
 // InitialConfigModel creates a new config model
@@ -344,7 +350,10 @@ func InitialConfigModel() ConfigModel {
 		apiPortRowIdx:          indices.apiPortRowIdx,
 		apiModeRowIdx:          indices.apiModeRowIdx,
 		apiBaseURLRowIdx:       indices.apiBaseURLRowIdx,
+		dbTypeRowIdx:           indices.dbTypeRowIdx,
 		dbLocationRowIdx:       indices.dbLocationRowIdx,
+		connectionRowIdx:       indices.connectionRowIdx,
+		testConnRowIdx:         indices.testConnRowIdx,
 		developmentModeRowIdx:  indices.developmentModeRowIdx,
 		documentTypeRowIdx:     indices.documentTypeRowIdx,
 		exportLangRowIdx:       indices.exportLangRowIdx,
@@ -579,6 +588,108 @@ func (m LanguageModalModel) View() string {
 		Padding(1, 2).
 		Width(60).
 		Render(modalContent)
+}
+
+// DBTypeModalModel is the modal for choosing SQLite vs PostgreSQL.
+type DBTypeModalModel struct {
+	cursor int
+	keys   ConfigKeyMap
+}
+
+// DBTypeSelectedMsg is dispatched when the user picks a DB type.
+type DBTypeSelectedMsg struct {
+	DBType string
+}
+
+// DBTypeCancelledMsg is dispatched when the user closes the modal without picking.
+type DBTypeCancelledMsg struct{}
+
+func InitialDBTypeModalModel(currentType string) *DBTypeModalModel {
+	if currentType == "" {
+		currentType = "sqlite"
+	}
+	c := 0
+	types := []string{"sqlite", "postgres"}
+	for i, t := range types {
+		if t == currentType {
+			c = i
+			break
+		}
+	}
+	return &DBTypeModalModel{cursor: c, keys: DefaultConfigKeyMap()}
+}
+
+func (m DBTypeModalModel) Init() tea.Cmd { return nil }
+
+func (m DBTypeModalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Escape):
+			return m, func() tea.Msg { return DBTypeCancelledMsg{} }
+		case key.Matches(msg, m.keys.Up):
+			m.cursor--
+			if m.cursor < 0 {
+				m.cursor = 1
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.Down):
+			m.cursor++
+			if m.cursor > 1 {
+				m.cursor = 0
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.Enter):
+			types := []string{"sqlite", "postgres"}
+			return m, func() tea.Msg {
+				return DBTypeSelectedMsg{DBType: types[m.cursor]}
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m DBTypeModalModel) View() string {
+	types := []string{"sqlite", "postgres"}
+	descs := []string{
+		"SQLite (local file) — solo machine, zero setup",
+		"PostgreSQL (external) — multi-laptop sync",
+	}
+	var rows []string
+	rows = append(rows, lipgloss.NewStyle().Bold(true).Render("Select Database Backend:"))
+	rows = append(rows, "")
+	for i, t := range types {
+		var style lipgloss.Style
+		if i == m.cursor {
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57")).Padding(0, 1)
+		} else {
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Padding(0, 1)
+		}
+		rows = append(rows, fmt.Sprintf("  %s - %s", style.Render(t), descs[i]))
+	}
+	rows = append(rows, "")
+	rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("Restart required to apply • ↑/↓: Select • Enter: Confirm • Esc: Cancel"))
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Width(70).
+		Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+}
+
+// PostgresPingResultMsg is dispatched by the Test Connection action.
+type PostgresPingResultMsg struct {
+	Duration time.Duration
+	Err      error
+}
+
+// PingPostgresCmd returns a tea.Cmd that pings the given URL and emits PostgresPingResultMsg.
+func PingPostgresCmd(url string) tea.Cmd {
+	return func() tea.Msg {
+		d, err := dbcheck.PingPostgresURL(url)
+		return PostgresPingResultMsg{Duration: d, Err: err}
+	}
 }
 
 // DocumentTypeModalModel represents the modal for selecting document type
@@ -855,7 +966,10 @@ type configRowIndices struct {
 	apiPortRowIdx          int
 	apiModeRowIdx          int
 	apiBaseURLRowIdx       int
+	dbTypeRowIdx           int
 	dbLocationRowIdx       int
+	connectionRowIdx       int
+	testConnRowIdx         int
 	developmentModeRowIdx  int
 	documentTypeRowIdx     int
 	exportLangRowIdx       int
@@ -927,25 +1041,25 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 
 	// Database Configuration
 	rows = append(rows, table.Row{"Database", ""})
-	// Show database type (read-only, set via CLI/env)
 	dbType := config.GetDBType()
+	indices.dbTypeRowIdx = len(rows)
 	if dbType == "postgres" {
 		rows = append(rows, table.Row{"  DB Type", "PostgreSQL"})
 	} else {
 		rows = append(rows, table.Row{"  DB Type", "SQLite"})
 	}
-	indices.dbLocationRowIdx = len(rows)
 	if dbType == "postgres" {
-		// For PostgreSQL, show connection info (masked)
 		postgresURL := config.GetPostgresURL()
+		indices.connectionRowIdx = len(rows)
 		if postgresURL != "" {
-			// Mask the password in the URL for display
 			rows = append(rows, table.Row{"  Connection", maskPostgresURL(postgresURL)})
 		} else {
 			rows = append(rows, table.Row{"  Connection", "(not configured)"})
 		}
+		indices.testConnRowIdx = len(rows)
+		rows = append(rows, table.Row{"  Test Connection", "(press Enter)"})
 	} else {
-		// For SQLite, show file location
+		indices.dbLocationRowIdx = len(rows)
 		rows = append(rows, table.Row{"  DB Location", config.GetDBPath()})
 	}
 
@@ -1054,6 +1168,8 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cfg.APIBaseURL = saveMsg.Value
 				case "DB Location":
 					cfg.DBLocation = saveMsg.Value
+				case "Postgres URL":
+					cfg.PostgresURL = strings.TrimSpace(saveMsg.Value)
 				case "Recipient Email":
 					cfg.RecipientEmail = saveMsg.Value
 				case "Sender Email":
@@ -1182,6 +1298,27 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, foregroundCmd
 	}
 
+	// Handle DB type modal updates (using overlay)
+	if m.overlay != nil && m.dbTypeModal != nil {
+		updatedForeground, foregroundCmd := m.dbTypeModal.Update(msg)
+		if updatedModal, ok := updatedForeground.(DBTypeModalModel); ok {
+			m.dbTypeModal = &updatedModal
+		} else if updatedModalPtr, ok := updatedForeground.(*DBTypeModalModel); ok {
+			m.dbTypeModal = updatedModalPtr
+		}
+
+		m.overlay = overlay.New(
+			m.dbTypeModal,
+			m,
+			overlay.Center,
+			overlay.Center,
+			0,
+			0,
+		)
+
+		return m, foregroundCmd
+	}
+
 	// Handle bool modal updates (using overlay)
 	if m.overlay != nil && m.boolModal != nil {
 		updatedForeground, foregroundCmd := m.boolModal.Update(msg)
@@ -1239,9 +1376,23 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textModal = InitialTextInputModal("API Base URL", cfg.APIBaseURL)
 				return m, m.textModal.Init()
 			}
-			if cursor == m.dbLocationRowIdx {
+			if cursor == m.dbLocationRowIdx && config.GetDBType() != "postgres" {
 				m.textModal = InitialTextInputModal("DB Location", cfg.DBLocation)
 				return m, m.textModal.Init()
+			}
+			if cursor == m.connectionRowIdx && config.GetDBType() == "postgres" {
+				m.textModal = InitialTextInputModal("Postgres URL", cfg.PostgresURL)
+				return m, m.textModal.Init()
+			}
+			if cursor == m.testConnRowIdx && config.GetDBType() == "postgres" {
+				url := config.GetPostgresURL()
+				if url == "" {
+					return m, SetStatus("No Postgres URL configured")
+				}
+				return m, tea.Batch(
+					SetStatus("Pinging PostgreSQL…"),
+					PingPostgresCmd(url),
+				)
 			}
 			if cursor == m.recipientEmailRowIdx {
 				m.textModal = InitialTextInputModal("Recipient Email", cfg.RecipientEmail)
@@ -1302,6 +1453,11 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cursor == m.documentTypeRowIdx {
 				m.documentTypeModal = InitialDocumentTypeModalModel(cfg.SendDocumentType)
 				m.overlay = overlay.New(m.documentTypeModal, m, overlay.Center, overlay.Center, 0, 0)
+				return m, nil
+			}
+			if cursor == m.dbTypeRowIdx {
+				m.dbTypeModal = InitialDBTypeModalModel(config.GetDBType())
+				m.overlay = overlay.New(m.dbTypeModal, m, overlay.Center, overlay.Center, 0, 0)
 				return m, nil
 			}
 			if cursor == m.apiModeRowIdx {

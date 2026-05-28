@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+	"timesheet/internal/dbcheck"
 	"timesheet/internal/logging"
 
 	"github.com/charmbracelet/huh"
@@ -341,6 +343,8 @@ func RequireConfig() {
 			trainingHoursStr := "36"
 			vacationHoursStr := "0"
 			dbLocationStr := ""
+			dbBackendChoice := "sqlite"
+			postgresURLStr := ""
 
 			form := huh.NewForm(
 				huh.NewGroup(huh.NewNote().
@@ -373,12 +377,50 @@ func RequireConfig() {
 
 				// Database Configuration
 				huh.NewGroup(
+					huh.NewNote().
+						Title("Choose your database backend").
+						Description("SQLite (default): a local file. Zero setup, perfect for one machine.\nPostgreSQL: connect to an external server you already run.\nPick PostgreSQL if you want to use timesheetz on multiple machines — the built-in sync service will keep them in sync."),
+					huh.NewSelect[string]().
+						Title("Database backend").
+						Options(
+							huh.NewOption("SQLite (local file)", "sqlite"),
+							huh.NewOption("PostgreSQL (external)", "postgres"),
+						).
+						Value(&dbBackendChoice),
+				),
+
+				// SQLite-only: file location
+				huh.NewGroup(
 					huh.NewInput().
 						Value(&dbLocationStr).
 						Title("Where should your database be stored?").
 						Placeholder("/path/to/timesheet.db").
-						Description("Leave empty to use the default location (~/.config/timesheetz/timesheet.db). You can specify a full path to store it elsewhere."),
-				),
+						Description("Leave empty to use the default location (~/.local/share/timesheetz/timesheet.db). You can specify a full path to store it elsewhere."),
+				).WithHideFunc(func() bool {
+					return dbBackendChoice != "sqlite"
+				}),
+
+				// Postgres-only: connection URL
+				huh.NewGroup(
+					huh.NewInput().
+						Value(&postgresURLStr).
+						Title("PostgreSQL connection URL").
+						Placeholder("postgres://user:pass@host:5432/dbname?sslmode=require").
+						Description("Stored in ~/.config/timesheetz/config.json (chmod 0600). You can change or test this later in the Config tab.").
+						Password(true).
+						Validate(func(s string) error {
+							s = strings.TrimSpace(s)
+							if s == "" {
+								return fmt.Errorf("URL required (or go back and choose SQLite)")
+							}
+							if !strings.HasPrefix(s, "postgres://") && !strings.HasPrefix(s, "postgresql://") {
+								return fmt.Errorf("URL must start with postgres:// or postgresql://")
+							}
+							return nil
+						}),
+				).WithHideFunc(func() bool {
+					return dbBackendChoice != "postgres"
+				}),
 
 				// Training Hours Configuration
 				huh.NewGroup(
@@ -540,8 +582,22 @@ func RequireConfig() {
 			}
 			config.VacationHours.YearlyTarget = vacationHours
 
-			// Set database location (empty string means use default)
-			config.DBLocation = dbLocationStr
+			// Set database backend choice
+			config.DBType = dbBackendChoice
+			if dbBackendChoice == "postgres" {
+				config.PostgresURL = strings.TrimSpace(postgresURLStr)
+				config.DBLocation = "" // SQLite path is irrelevant in postgres mode
+				// Best-effort connectivity check. We don't block on failure —
+				// the user can fix the URL later via the Config tab.
+				if d, err := dbcheck.PingPostgresURL(config.PostgresURL); err != nil {
+					fmt.Printf("Warning: could not reach PostgreSQL (%v).\nSaved the URL anyway — you can edit or test it later from the Config tab.\n", err)
+				} else {
+					fmt.Printf("PostgreSQL reachable (%s).\n", d.Round(time.Millisecond))
+				}
+			} else {
+				config.DBLocation = dbLocationStr
+				config.PostgresURL = "" // clear any stale URL when picking SQLite
+			}
 
 			// Save the configuration
 			SaveConfig(config)
@@ -585,8 +641,20 @@ func SaveConfig(config Config) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, configJSON, 0644); err != nil {
+	// When the config contains a Postgres URL (which embeds credentials)
+	// write the file with owner-only perms to keep the password off
+	// world-readable disks.
+	perm := os.FileMode(0644)
+	if strings.TrimSpace(config.PostgresURL) != "" {
+		perm = 0600
+	}
+	if err := os.WriteFile(configPath, configJSON, perm); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	// os.WriteFile only sets perms on creation. Force perms if the file
+	// already existed with looser bits.
+	if err := os.Chmod(configPath, perm); err != nil {
+		logging.Log("Warning: could not chmod %s to %o: %v", configPath, perm, err)
 	}
 
 	return nil

@@ -31,7 +31,18 @@ Timesheetz is a timesheet tracking TUI/web application for freelancers. It suppo
 
 ## Database Configuration
 
-Supports two database backends:
+Supports two database backends. On first launch, the setup wizard asks
+which one you want. You can change your mind later in the **Config** tab.
+
+- **SQLite** — a local file at `~/.local/share/timesheetz/timesheet.db`.
+  Zero setup. Right for one machine.
+- **PostgreSQL** — an external server you already run. Right for using
+  timesheetz on multiple machines: the built-in sync service keeps every
+  laptop in sync via this central DB.
+
+The wizard ping-tests the Postgres URL on submit and stores it in
+`~/.config/timesheetz/config.json` with `0600` perms (the URL embeds
+credentials).
 
 ### SQLite (Default)
 ```bash
@@ -41,19 +52,34 @@ timesheetz  # Uses ~/.local/share/timesheetz/timesheet.db
 ### PostgreSQL
 ```bash
 # Via CLI flags
-timesheetz --db-type postgres --postgres-url "postgres://user:pass@host:5432/db?sslmode=disable"
+timesheetz --db-type postgres --postgres-url "postgres://user:pass@host:5432/db?sslmode=require"
 
 # Via environment variables
 export TIMESHEETZ_DB_TYPE=postgres
-export TIMESHEETZ_POSTGRES_URL="postgres://user:pass@host:5432/db?sslmode=disable"
+export TIMESHEETZ_POSTGRES_URL="postgres://user:pass@host:5432/db?sslmode=require"
 timesheetz
 
-# Via config file (~/.config/timesheetz/config.yaml)
-dbType: postgres
-postgresURL: "postgres://user:pass@host:5432/db?sslmode=disable"
+# Via config file (~/.config/timesheetz/config.json)
+{
+  "dbType": "postgres",
+  "postgresURL": "postgres://user:pass@host:5432/db?sslmode=require"
+}
 ```
 
-Configuration precedence: CLI flags > env vars > config file > defaults
+Configuration precedence: CLI flags > env vars > config file > defaults.
+
+### Changing backends from the TUI
+
+Open the **Config** tab and navigate to the `DB Type` row. Press Enter to
+cycle between SQLite and PostgreSQL. When PostgreSQL is selected, two new
+rows appear:
+
+- **Connection** — press Enter to edit the URL in a masked text input.
+- **Test Connection** — press Enter to ping the configured server; the
+  result shows in the status bar.
+
+Changing the DB type or connection requires restarting `timesheetz` to
+take effect — the live connection is held by the running process.
 
 ### PostgreSQL Setup
 Use the setup scripts to create PostgreSQL on Docker or Kubernetes:

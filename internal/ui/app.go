@@ -649,6 +649,31 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ConfigModel.table.SetCursor(m.ConfigModel.documentTypeRowIdx)
 			}
 			return m, nil
+		case DBTypeSelectedMsg:
+			cfg, err := config.GetConfig()
+			if err == nil {
+				cfg.DBType = msg.DBType
+				config.SaveConfig(cfg)
+				// Reflect the choice in this process so the Config tab refreshes
+				// correctly; the live DB connection still requires a restart.
+				config.SetRuntimeDBType(msg.DBType)
+			}
+			m.ConfigModel = InitialConfigModel()
+			if m.ConfigModel.dbTypeRowIdx < len(m.ConfigModel.table.Rows()) {
+				m.ConfigModel.table.SetCursor(m.ConfigModel.dbTypeRowIdx)
+			}
+			return m, SetStatus(fmt.Sprintf("DB type set to %s. Restart timesheetz to apply.", msg.DBType))
+		case DBTypeCancelledMsg:
+			m.ConfigModel = InitialConfigModel()
+			if m.ConfigModel.dbTypeRowIdx < len(m.ConfigModel.table.Rows()) {
+				m.ConfigModel.table.SetCursor(m.ConfigModel.dbTypeRowIdx)
+			}
+			return m, nil
+		case PostgresPingResultMsg:
+			if msg.Err != nil {
+				return m, SetStatus(fmt.Sprintf("PostgreSQL FAIL: %v", msg.Err))
+			}
+			return m, SetStatus(fmt.Sprintf("PostgreSQL OK (%s)", msg.Duration.Round(time.Millisecond)))
 		case BoolSelectedMsg:
 			cfg, err := config.GetConfig()
 			if err == nil {
