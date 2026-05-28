@@ -946,11 +946,7 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 		}
 	} else {
 		// For SQLite, show file location
-		if cfg.DBLocation == "" {
-			rows = append(rows, table.Row{"  DB Location", "(default)"})
-		} else {
-			rows = append(rows, table.Row{"  DB Location", cfg.DBLocation})
-		}
+		rows = append(rows, table.Row{"  DB Location", config.GetDBPath()})
 	}
 
 	// Development Settings
