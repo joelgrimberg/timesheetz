@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 	"timesheet/internal/config"
 	"timesheet/internal/datalayer"
@@ -361,31 +362,42 @@ func (m VacationModel) View() string {
 			Render("↑/↓: Navigate • ←/→: Change year • ?: Help • q: Quit • </>: Tabs")
 	}
 
-	// Create combined summary box with available, used, and remaining
-	var summaryContent string
+	// Build the summary box: Available / Used / Remaining. Each line is shown
+	// only when its value is non-zero so the box stays compact when there's
+	// nothing to report.
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	bigStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78"))
+
+	var availLines []string
+	availLines = append(availLines, "  "+valueStyle.Render(fmt.Sprintf("Current Year (%d): %d hours", m.currentYear, m.summary.YearlyTarget)))
 	if m.summary.CarryoverHours > 0 {
-		summaryContent = fmt.Sprintf(
-			"%s\n  %s\n  %s\n\n%s\n  %s\n  %s\n\n%s\n  %s",
-			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Available:"),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Current Year (%d): %d hours", m.currentYear, m.summary.YearlyTarget)),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Carryover from %d: %d hours", m.summary.Year-1, m.summary.CarryoverHours)),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Used:"),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("From Carryover: %d hours", m.summary.UsedFromCarryover)),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("From Current Year: %d hours", m.summary.UsedFromCurrent)),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Remaining:"),
-			lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("%d hours", m.summary.RemainingTotal)),
-		)
-	} else {
-		summaryContent = fmt.Sprintf(
-			"%s\n  %s\n\n%s\n  %s\n\n%s\n  %s",
-			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Available:"),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Current Year (%d): %d hours", m.currentYear, m.summary.YearlyTarget)),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Used:"),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(fmt.Sprintf("Total: %d hours", m.summary.UsedHours)),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Remaining:"),
-			lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("%d hours", m.summary.RemainingTotal)),
-		)
+		availLines = append(availLines, "  "+valueStyle.Render(fmt.Sprintf("Carryover from %d: %d hours", m.summary.Year-1, m.summary.CarryoverHours)))
 	}
+	if m.summary.BufferHours > 0 {
+		availLines = append(availLines, "  "+valueStyle.Render(fmt.Sprintf("Buffer banked: %d hours", m.summary.BufferHours)))
+	}
+
+	var usedLines []string
+	if m.summary.UsedFromCarryover > 0 {
+		usedLines = append(usedLines, "  "+valueStyle.Render(fmt.Sprintf("From Carryover: %d hours", m.summary.UsedFromCarryover)))
+	}
+	if m.summary.UsedFromBuffer > 0 {
+		usedLines = append(usedLines, "  "+valueStyle.Render(fmt.Sprintf("From Buffer: %d hours", m.summary.UsedFromBuffer)))
+	}
+	if m.summary.UsedFromCurrent > 0 || len(usedLines) == 0 {
+		usedLines = append(usedLines, "  "+valueStyle.Render(fmt.Sprintf("From Current Year: %d hours", m.summary.UsedFromCurrent)))
+	}
+
+	summaryContent := fmt.Sprintf(
+		"%s\n%s\n\n%s\n%s\n\n%s\n  %s",
+		labelStyle.Render("Available:"),
+		strings.Join(availLines, "\n"),
+		labelStyle.Render("Used:"),
+		strings.Join(usedLines, "\n"),
+		labelStyle.Render("Remaining:"),
+		bigStyle.Render(fmt.Sprintf("%d hours", m.summary.RemainingTotal)),
+	)
 
 	summaryBox := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).

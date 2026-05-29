@@ -22,6 +22,7 @@ const (
 	TrainingMode
 	TrainingBudgetMode
 	VacationMode
+	BufferMode
 	ClientsMode
 	EarningsMode
 	ConfigMode
@@ -29,6 +30,7 @@ const (
 	TrainingBudgetFormMode
 	ClientFormMode
 	ClientRatesModalMode
+	BufferFormMode
 )
 
 // RefreshMsg is sent when the database is updated
@@ -55,6 +57,8 @@ type AppModel struct {
 	TrainingModel           TrainingModel
 	TrainingBudgetModel     TrainingBudgetModel
 	VacationModel           VacationModel
+	BufferModel             BufferModel
+	BufferFormModel         BufferFormModel
 	ClientsModel            ClientsModel
 	EarningsModel           EarningsModel
 	ConfigModel             ConfigModel
@@ -84,6 +88,7 @@ func NewAppModel(addMode bool) AppModel {
 		TrainingModel:           InitialTrainingModel(),
 		TrainingBudgetModel:     InitialTrainingBudgetModel(),
 		VacationModel:           InitialVacationModel(),
+		BufferModel:             InitialBufferModel(),
 		ClientsModel:            InitialClientsModel(),
 		EarningsModel:           InitialEarningsModel(),
 		ConfigModel:             InitialConfigModel(),
@@ -132,6 +137,10 @@ func (m AppModel) Init() tea.Cmd {
 		modeCmd = m.TrainingBudgetFormModel.Init()
 	case VacationMode:
 		modeCmd = m.VacationModel.Init()
+	case BufferMode:
+		modeCmd = m.BufferModel.Init()
+	case BufferFormMode:
+		modeCmd = m.BufferFormModel.Init()
 	case ClientsMode:
 		modeCmd = m.ClientsModel.Init()
 	case ClientFormMode:
@@ -181,7 +190,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Only handle special keys when not in form modes or client form/modal or config editing
 		configEditing := m.ActiveMode == ConfigMode && m.ConfigModel.IsEditing()
-		if m.ActiveMode != FormMode && m.ActiveMode != TrainingBudgetFormMode && m.ActiveMode != ClientFormMode && m.ActiveMode != ClientRatesModalMode && !configEditing {
+		if m.ActiveMode != FormMode && m.ActiveMode != TrainingBudgetFormMode && m.ActiveMode != ClientFormMode && m.ActiveMode != ClientRatesModalMode && m.ActiveMode != BufferFormMode && !configEditing {
 			// Handle tab switching
 			switch keyMsg.String() {
 			case "<":
@@ -199,8 +208,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ActiveMode = TrainingMode
 				case VacationMode:
 					m.ActiveMode = TrainingBudgetMode
-				case ClientsMode:
+				case BufferMode:
 					m.ActiveMode = VacationMode
+				case ClientsMode:
+					m.ActiveMode = BufferMode
 				case EarningsMode:
 					m.ActiveMode = ClientsMode
 				case ConfigMode:
@@ -217,6 +228,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.TrainingModel = InitialTrainingModel()
 				} else if m.ActiveMode == VacationMode && prevMode != VacationMode {
 					m.VacationModel = InitialVacationModel()
+				} else if m.ActiveMode == BufferMode && prevMode != BufferMode {
+					m.BufferModel = InitialBufferModel()
 				} else if m.ActiveMode == ConfigMode && prevMode != ConfigMode {
 					m.ConfigModel = InitialConfigModel()
 					return m, m.ConfigModel.Init()
@@ -234,6 +247,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case TrainingBudgetMode:
 					m.ActiveMode = VacationMode
 				case VacationMode:
+					m.ActiveMode = BufferMode
+				case BufferMode:
 					m.ActiveMode = ClientsMode
 				case ClientsMode:
 					m.ActiveMode = EarningsMode
@@ -254,6 +269,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.TrainingModel = InitialTrainingModel()
 				} else if m.ActiveMode == VacationMode && prevMode != VacationMode {
 					m.VacationModel = InitialVacationModel()
+				} else if m.ActiveMode == BufferMode && prevMode != BufferMode {
+					m.BufferModel = InitialBufferModel()
 				} else if m.ActiveMode == ConfigMode && prevMode != ConfigMode {
 					m.ConfigModel = InitialConfigModel()
 					return m, m.ConfigModel.Init()
@@ -276,6 +293,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.TrainingModel = InitialTrainingModel()
 				m.TrainingBudgetModel = InitialTrainingBudgetModel()
 				m.VacationModel = InitialVacationModel()
+				m.BufferModel = InitialBufferModel()
 				m.ClientsModel = InitialClientsModel()
 				m.EarningsModel = InitialEarningsModel()
 				m.ConfigModel = InitialConfigModel()
@@ -377,6 +395,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.TrainingModel = InitialTrainingModel()
 			m.TrainingBudgetModel = InitialTrainingBudgetModel()
 			m.VacationModel = InitialVacationModel()
+			m.BufferModel = InitialBufferModel()
 			m.ClientsModel = InitialClientsModel()
 			m.EarningsModel = InitialEarningsModel()
 		}
@@ -532,6 +551,38 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update vacation model
 		vacationModel, cmd := m.VacationModel.Update(msg)
 		m.VacationModel = vacationModel.(VacationModel)
+		return m, cmd
+
+	case BufferMode:
+		// Open add form
+		if _, ok := msg.(AddBufferMsg); ok {
+			m.ActiveMode = BufferFormMode
+			existing := make(map[int]bool, len(m.BufferModel.entries))
+			for _, e := range m.BufferModel.entries {
+				existing[e.Month] = true
+			}
+			m.BufferFormModel = InitialBufferFormModel(m.BufferModel.currentYear, existing)
+			return m, m.BufferFormModel.Init()
+		}
+		// Open edit form
+		if editMsg, ok := msg.(EditBufferMsg); ok {
+			m.ActiveMode = BufferFormMode
+			m.BufferFormModel = InitialBufferFormModelForEdit(editMsg.Entry)
+			return m, m.BufferFormModel.Init()
+		}
+
+		bufferModel, cmd := m.BufferModel.Update(msg)
+		m.BufferModel = bufferModel.(BufferModel)
+		return m, cmd
+
+	case BufferFormMode:
+		if _, ok := msg.(ReturnToBufferMsg); ok {
+			m.ActiveMode = BufferMode
+			m.BufferModel = InitialBufferModel()
+			return m, nil
+		}
+		bufferFormModel, cmd := m.BufferFormModel.Update(msg)
+		m.BufferFormModel = bufferFormModel.(BufferFormModel)
 		return m, cmd
 
 	case ClientsMode:
@@ -725,9 +776,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m AppModel) View() string {
 	// Render tabs
 	var renderedTabs []string
-	tabs := []string{"Timesheet", "Overview", "Training", "Training Budget", "Vacation", "Clients", "Earnings", "Config"}
+	tabs := []string{"Timesheet", "Overview", "Training", "Training Budget", "Vacation", "Buffer", "Clients", "Earnings", "Config"}
 	// Map tab names to their corresponding modes
-	tabModes := []AppMode{TimesheetMode, OverviewMode, TrainingMode, TrainingBudgetMode, VacationMode, ClientsMode, EarningsMode, ConfigMode}
+	tabModes := []AppMode{TimesheetMode, OverviewMode, TrainingMode, TrainingBudgetMode, VacationMode, BufferMode, ClientsMode, EarningsMode, ConfigMode}
 
 	for i, t := range tabs {
 		var style lipgloss.Style
@@ -756,6 +807,8 @@ func (m AppModel) View() string {
 		statusTitle = fmt.Sprintf("Training Budget %d", m.TrainingBudgetModel.currentYear)
 	case VacationMode:
 		statusTitle = fmt.Sprintf("Vacation %d", m.VacationModel.currentYear)
+	case BufferMode, BufferFormMode:
+		statusTitle = fmt.Sprintf("Buffer %d", m.BufferModel.currentYear)
 	case EarningsMode:
 		if m.EarningsModel.currentMonth > 0 {
 			monthName := time.Month(m.EarningsModel.currentMonth).String()
@@ -844,6 +897,10 @@ func (m AppModel) View() string {
 		content = m.TrainingBudgetModel.View()
 	case VacationMode:
 		content = m.VacationModel.View()
+	case BufferMode:
+		content = m.BufferModel.View()
+	case BufferFormMode:
+		content = m.BufferFormModel.View()
 	case ClientsMode:
 		content = m.ClientsModel.View()
 	case ClientFormMode:

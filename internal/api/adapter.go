@@ -75,6 +75,22 @@ func (a *ClientAdapter) GetVacationSummaryForYear(year int) (db.VacationSummary,
 	return a.client.GetVacationSummaryForYear(year)
 }
 
+func (a *ClientAdapter) GetBufferEntriesForYear(year int) ([]db.BufferEntry, error) {
+	return a.client.GetBufferEntriesForYear(year)
+}
+
+func (a *ClientAdapter) GetBufferTotalForYear(year int) (int, error) {
+	return a.client.GetBufferTotalForYear(year)
+}
+
+func (a *ClientAdapter) UpsertBufferEntry(entry db.BufferEntry) error {
+	return a.client.UpsertBufferEntry(entry)
+}
+
+func (a *ClientAdapter) DeleteBufferEntry(year, month int) error {
+	return a.client.DeleteBufferEntry(year, month)
+}
+
 func (a *ClientAdapter) GetTrainingBudgetEntriesForYear(year int) ([]db.TrainingBudgetEntry, error) {
 	return a.client.GetTrainingBudgetEntriesForYear(year)
 }

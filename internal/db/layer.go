@@ -28,6 +28,12 @@ type DataLayer interface {
 	DeleteVacationCarryover(year int) error
 	GetVacationSummaryForYear(year int) (VacationSummary, error)
 
+	// Buffer (banked overtime) operations
+	GetBufferEntriesForYear(year int) ([]BufferEntry, error)
+	GetBufferTotalForYear(year int) (int, error)
+	UpsertBufferEntry(entry BufferEntry) error
+	DeleteBufferEntry(year, month int) error
+
 	// Training budget operations
 	GetTrainingBudgetEntriesForYear(year int) ([]TrainingBudgetEntry, error)
 	AddTrainingBudgetEntry(entry TrainingBudgetEntry) error
@@ -126,6 +132,22 @@ func (l *LocalDBLayer) DeleteVacationCarryover(year int) error {
 
 func (l *LocalDBLayer) GetVacationSummaryForYear(year int) (VacationSummary, error) {
 	return GetVacationSummaryForYear(year)
+}
+
+func (l *LocalDBLayer) GetBufferEntriesForYear(year int) ([]BufferEntry, error) {
+	return GetBufferEntriesForYear(year)
+}
+
+func (l *LocalDBLayer) GetBufferTotalForYear(year int) (int, error) {
+	return GetBufferTotalForYear(year)
+}
+
+func (l *LocalDBLayer) UpsertBufferEntry(entry BufferEntry) error {
+	return UpsertBufferEntry(entry)
+}
+
+func (l *LocalDBLayer) DeleteBufferEntry(year, month int) error {
+	return DeleteBufferEntry(year, month)
 }
 
 func (l *LocalDBLayer) GetTrainingBudgetEntriesForYear(year int) ([]TrainingBudgetEntry, error) {

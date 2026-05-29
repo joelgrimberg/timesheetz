@@ -1071,3 +1071,83 @@ func (d *DualLayer) GetVacationSummaryForYear(year int) (VacationSummary, error)
 
 	return VacationSummary{}, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
 }
+
+// Buffer (banked overtime) operations
+
+func (d *DualLayer) GetBufferEntriesForYear(year int) ([]BufferEntry, error) {
+	localEntries, localErr := d.local.GetBufferEntriesForYear(year)
+	remoteEntries, remoteErr := d.remote.GetBufferEntriesForYear(year)
+
+	if localErr == nil && remoteErr == nil {
+		if !reflect.DeepEqual(localEntries, remoteEntries) {
+			logging.Log("DUAL MODE: GetBufferEntriesForYear - Mismatch for year %d", year)
+		}
+		return localEntries, nil
+	}
+	if localErr != nil && remoteErr == nil {
+		logging.Log("DUAL MODE: Local DB failed, using remote: %v", localErr)
+		return remoteEntries, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API failed, using local: %v", remoteErr)
+		return localEntries, nil
+	}
+	return nil, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) GetBufferTotalForYear(year int) (int, error) {
+	localTotal, localErr := d.local.GetBufferTotalForYear(year)
+	remoteTotal, remoteErr := d.remote.GetBufferTotalForYear(year)
+
+	if localErr == nil && remoteErr == nil {
+		if localTotal != remoteTotal {
+			logging.Log("DUAL MODE: GetBufferTotalForYear - Mismatch for year %d: local=%d, remote=%d", year, localTotal, remoteTotal)
+		}
+		return localTotal, nil
+	}
+	if localErr != nil && remoteErr == nil {
+		return remoteTotal, nil
+	}
+	if localErr == nil && remoteErr != nil {
+		return localTotal, nil
+	}
+	return 0, fmt.Errorf("both local and remote failed: local=%v, remote=%v", localErr, remoteErr)
+}
+
+func (d *DualLayer) UpsertBufferEntry(entry BufferEntry) error {
+	localErr := d.local.UpsertBufferEntry(entry)
+	remoteErr := d.remote.UpsertBufferEntry(entry)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB upsert failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API upsert failed: %v", remoteErr)
+	}
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote upserts failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+	if localErr != nil {
+		return fmt.Errorf("local upsert failed: %w", localErr)
+	}
+	return remoteErr
+}
+
+func (d *DualLayer) DeleteBufferEntry(year, month int) error {
+	localErr := d.local.DeleteBufferEntry(year, month)
+	remoteErr := d.remote.DeleteBufferEntry(year, month)
+
+	if localErr != nil {
+		logging.Log("DUAL MODE: Local DB delete failed: %v", localErr)
+	}
+	if remoteErr != nil {
+		logging.Log("DUAL MODE: Remote API delete failed: %v", remoteErr)
+	}
+	if localErr != nil && remoteErr != nil {
+		return fmt.Errorf("both local and remote deletes failed: local=%v, remote=%v", localErr, remoteErr)
+	}
+	if localErr != nil {
+		return fmt.Errorf("local delete failed: %w", localErr)
+	}
+	return remoteErr
+}

@@ -92,14 +92,27 @@ type VacationCarryover struct {
 	Notes          string
 }
 
+// BufferEntry represents banked overtime hours for a specific month
+type BufferEntry struct {
+	Id        int
+	Year      int
+	Month     int
+	Hours     int
+	Notes     string
+	CreatedAt string
+	UpdatedAt string
+}
+
 // VacationSummary provides comprehensive vacation hours breakdown for a year
 type VacationSummary struct {
 	Year              int
 	YearlyTarget      int
 	CarryoverHours    int
+	BufferHours       int
 	TotalAvailable    int
 	UsedHours         int
 	UsedFromCarryover int
+	UsedFromBuffer    int
 	UsedFromCurrent   int
 	RemainingTotal    int
 }
@@ -215,6 +228,17 @@ func InitializeDatabase(dbPath string) error {
 			notes TEXT
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_vacation_carryover_year ON vacation_carryover(year);`,
+		`CREATE TABLE IF NOT EXISTS buffer_hours (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			year INTEGER NOT NULL,
+			month INTEGER NOT NULL,
+			hours INTEGER NOT NULL,
+			notes TEXT,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(year, month)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_buffer_hours_year ON buffer_hours(year);`,
 	}
 
 	for _, stmt := range stmts {
@@ -707,26 +731,108 @@ func GetVacationSummaryForYear(year int) (VacationSummary, error) {
 		summary.CarryoverHours = carryover.CarryoverHours
 	}
 
-	// 3. Get used hours from timesheet
+	// 3. Get banked buffer hours for the year
+	bufferHours, err := GetBufferTotalForYear(year)
+	if err != nil {
+		return summary, fmt.Errorf("failed to get buffer hours: %w", err)
+	}
+	summary.BufferHours = bufferHours
+
+	// 4. Get used hours from timesheet
 	usedHours, err := GetVacationHoursForYear(year)
 	if err != nil {
 		return summary, fmt.Errorf("failed to get used hours: %w", err)
 	}
 	summary.UsedHours = usedHours
 
-	// 4. Calculate breakdown
-	summary.TotalAvailable = summary.YearlyTarget + summary.CarryoverHours
+	// 5. Calculate breakdown
+	summary.TotalAvailable = summary.YearlyTarget + summary.CarryoverHours + summary.BufferHours
 
-	// Deduct from carryover first (per user requirement)
-	if usedHours <= summary.CarryoverHours {
-		summary.UsedFromCarryover = usedHours
-		summary.UsedFromCurrent = 0
+	// Deduct in order: carryover → buffer → current-year allowance.
+	remaining := usedHours
+	if remaining <= summary.CarryoverHours {
+		summary.UsedFromCarryover = remaining
+		remaining = 0
 	} else {
 		summary.UsedFromCarryover = summary.CarryoverHours
-		summary.UsedFromCurrent = usedHours - summary.CarryoverHours
+		remaining -= summary.CarryoverHours
 	}
+	if remaining <= summary.BufferHours {
+		summary.UsedFromBuffer = remaining
+		remaining = 0
+	} else {
+		summary.UsedFromBuffer = summary.BufferHours
+		remaining -= summary.BufferHours
+	}
+	summary.UsedFromCurrent = remaining
 
 	summary.RemainingTotal = summary.TotalAvailable - usedHours
 
 	return summary, nil
+}
+
+// GetBufferEntriesForYear returns all buffer entries for a year, ordered by month ascending
+func GetBufferEntriesForYear(year int) ([]BufferEntry, error) {
+	rows, err := db.Query(`
+		SELECT id, year, month, hours, COALESCE(notes, '') as notes,
+		       COALESCE(created_at, '') as created_at, COALESCE(updated_at, '') as updated_at
+		FROM buffer_hours
+		WHERE year = ?
+		ORDER BY month ASC
+	`, year)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query buffer entries: %w", err)
+	}
+	defer rows.Close()
+
+	entries := make([]BufferEntry, 0, 12)
+	for rows.Next() {
+		var e BufferEntry
+		if err := rows.Scan(&e.Id, &e.Year, &e.Month, &e.Hours, &e.Notes, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan buffer entry: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// GetBufferTotalForYear returns the summed banked buffer hours for a year
+func GetBufferTotalForYear(year int) (int, error) {
+	var total int
+	err := db.QueryRow(`SELECT COALESCE(SUM(hours), 0) FROM buffer_hours WHERE year = ?`, year).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get buffer total: %w", err)
+	}
+	return total, nil
+}
+
+// UpsertBufferEntry inserts or updates a buffer entry for (year, month)
+func UpsertBufferEntry(entry BufferEntry) error {
+	if entry.Hours < 0 {
+		return fmt.Errorf("buffer hours must be >= 0")
+	}
+	if entry.Month < 1 || entry.Month > 12 {
+		return fmt.Errorf("month must be between 1 and 12")
+	}
+	_, err := db.Exec(`
+		INSERT INTO buffer_hours (year, month, hours, notes, created_at, updated_at)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT(year, month) DO UPDATE SET
+			hours = excluded.hours,
+			notes = excluded.notes,
+			updated_at = CURRENT_TIMESTAMP
+	`, entry.Year, entry.Month, entry.Hours, entry.Notes)
+	if err != nil {
+		return fmt.Errorf("failed to upsert buffer entry: %w", err)
+	}
+	return nil
+}
+
+// DeleteBufferEntry removes the buffer entry for (year, month)
+func DeleteBufferEntry(year, month int) error {
+	_, err := db.Exec(`DELETE FROM buffer_hours WHERE year = ? AND month = ?`, year, month)
+	if err != nil {
+		return fmt.Errorf("failed to delete buffer entry: %w", err)
+	}
+	return nil
 }

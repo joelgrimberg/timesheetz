@@ -74,6 +74,8 @@ func AppModeToString(mode AppMode) string {
 		return "training_budget"
 	case VacationMode:
 		return "vacation"
+	case BufferMode:
+		return "buffer"
 	case ClientsMode:
 		return "clients"
 	case EarningsMode:
@@ -98,6 +100,8 @@ func StringToAppMode(s string) AppMode {
 		return TrainingBudgetMode
 	case "vacation":
 		return VacationMode
+	case "buffer":
+		return BufferMode
 	case "clients":
 		return ClientsMode
 	case "earnings":

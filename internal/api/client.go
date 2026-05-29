@@ -259,6 +259,24 @@ func (c *Client) DeleteVacationCarryover(year int) error {
 	return err
 }
 
+// Buffer hours operations are not exposed via the remote API yet — use SQLite or PostgreSQL directly.
+
+func (c *Client) GetBufferEntriesForYear(year int) ([]db.BufferEntry, error) {
+	return nil, fmt.Errorf("buffer hours not supported in remote API mode")
+}
+
+func (c *Client) GetBufferTotalForYear(year int) (int, error) {
+	return 0, fmt.Errorf("buffer hours not supported in remote API mode")
+}
+
+func (c *Client) UpsertBufferEntry(entry db.BufferEntry) error {
+	return fmt.Errorf("buffer hours not supported in remote API mode")
+}
+
+func (c *Client) DeleteBufferEntry(year, month int) error {
+	return fmt.Errorf("buffer hours not supported in remote API mode")
+}
+
 // GetVacationSummaryForYear retrieves comprehensive vacation info for a year
 func (c *Client) GetVacationSummaryForYear(year int) (db.VacationSummary, error) {
 	endpoint := fmt.Sprintf("/api/vacation-summary?year=%d", year)

@@ -381,24 +381,104 @@ func (p *PostgresDBLayer) GetVacationSummaryForYear(year int) (VacationSummary, 
 		summary.CarryoverHours = carryover.CarryoverHours
 	}
 
+	bufferHours, err := p.GetBufferTotalForYear(year)
+	if err != nil {
+		return summary, fmt.Errorf("failed to get buffer hours: %w", err)
+	}
+	summary.BufferHours = bufferHours
+
 	usedHours, err := p.GetVacationHoursForYear(year)
 	if err != nil {
 		return summary, fmt.Errorf("failed to get used hours: %w", err)
 	}
 	summary.UsedHours = usedHours
 
-	summary.TotalAvailable = summary.YearlyTarget + summary.CarryoverHours
+	summary.TotalAvailable = summary.YearlyTarget + summary.CarryoverHours + summary.BufferHours
 
-	if usedHours <= summary.CarryoverHours {
-		summary.UsedFromCarryover = usedHours
-		summary.UsedFromCurrent = 0
+	// Deduct in order: carryover → buffer → current-year allowance.
+	remaining := usedHours
+	if remaining <= summary.CarryoverHours {
+		summary.UsedFromCarryover = remaining
+		remaining = 0
 	} else {
 		summary.UsedFromCarryover = summary.CarryoverHours
-		summary.UsedFromCurrent = usedHours - summary.CarryoverHours
+		remaining -= summary.CarryoverHours
 	}
+	if remaining <= summary.BufferHours {
+		summary.UsedFromBuffer = remaining
+		remaining = 0
+	} else {
+		summary.UsedFromBuffer = summary.BufferHours
+		remaining -= summary.BufferHours
+	}
+	summary.UsedFromCurrent = remaining
 
 	summary.RemainingTotal = summary.TotalAvailable - usedHours
 	return summary, nil
+}
+
+// Buffer hours operations
+
+func (p *PostgresDBLayer) GetBufferEntriesForYear(year int) ([]BufferEntry, error) {
+	rows, err := pgDB.Query(`
+		SELECT id, year, month, hours, COALESCE(notes, '') as notes,
+		       COALESCE(created_at, '') as created_at, COALESCE(updated_at, '') as updated_at
+		FROM buffer_hours
+		WHERE year = $1
+		ORDER BY month ASC
+	`, year)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query buffer entries: %w", err)
+	}
+	defer rows.Close()
+
+	entries := make([]BufferEntry, 0, 12)
+	for rows.Next() {
+		var e BufferEntry
+		if err := rows.Scan(&e.Id, &e.Year, &e.Month, &e.Hours, &e.Notes, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan buffer entry: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func (p *PostgresDBLayer) GetBufferTotalForYear(year int) (int, error) {
+	var total int
+	err := pgDB.QueryRow(`SELECT COALESCE(SUM(hours), 0) FROM buffer_hours WHERE year = $1`, year).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get buffer total: %w", err)
+	}
+	return total, nil
+}
+
+func (p *PostgresDBLayer) UpsertBufferEntry(entry BufferEntry) error {
+	if entry.Hours < 0 {
+		return fmt.Errorf("buffer hours must be >= 0")
+	}
+	if entry.Month < 1 || entry.Month > 12 {
+		return fmt.Errorf("month must be between 1 and 12")
+	}
+	_, err := pgDB.Exec(`
+		INSERT INTO buffer_hours (year, month, hours, notes, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT (year, month) DO UPDATE SET
+			hours = EXCLUDED.hours,
+			notes = EXCLUDED.notes,
+			updated_at = CURRENT_TIMESTAMP
+	`, entry.Year, entry.Month, entry.Hours, entry.Notes)
+	if err != nil {
+		return fmt.Errorf("failed to upsert buffer entry: %w", err)
+	}
+	return nil
+}
+
+func (p *PostgresDBLayer) DeleteBufferEntry(year, month int) error {
+	_, err := pgDB.Exec(`DELETE FROM buffer_hours WHERE year = $1 AND month = $2`, year, month)
+	if err != nil {
+		return fmt.Errorf("failed to delete buffer entry: %w", err)
+	}
+	return nil
 }
 
 // Training budget operations

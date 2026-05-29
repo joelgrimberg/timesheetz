@@ -82,6 +82,19 @@ func InitializePostgresDatabase() error {
 			notes TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_vacation_carryover_year ON vacation_carryover(year)`,
+
+		// Buffer hours table (banked overtime per month)
+		`CREATE TABLE IF NOT EXISTS buffer_hours (
+			id SERIAL PRIMARY KEY,
+			year INTEGER NOT NULL,
+			month INTEGER NOT NULL,
+			hours INTEGER NOT NULL,
+			notes TEXT,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(year, month)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_buffer_hours_year ON buffer_hours(year)`,
 	}
 
 	for _, stmt := range stmts {
