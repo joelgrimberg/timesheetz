@@ -141,6 +141,7 @@ func (s *SyncService) Sync(direction SyncDirection) error {
 		{"timesheet", s.syncTimesheet},
 		{"training_budget", s.syncTrainingBudget},
 		{"vacation_carryover", s.syncVacationCarryover},
+		{"buffer_hours", s.syncBufferHours},
 	}
 
 	for _, table := range tables {
@@ -453,6 +454,66 @@ func (s *SyncService) syncTrainingBudget(direction SyncDirection, stats *SyncSta
 			} else if remote.UpdatedAt > local.UpdatedAt {
 				if err := s.updateTrainingBudgetInLocal(remote, local.Id); err != nil {
 					return fmt.Errorf("failed to update training budget in local: %w", err)
+				}
+				stats.RecordsPulled++
+			}
+		}
+	}
+
+	return nil
+}
+
+// syncBufferHours synchronizes the buffer_hours table. The unique key is
+// (year, month), so we map on that composite to detect inserts vs. updates.
+func (s *SyncService) syncBufferHours(direction SyncDirection, stats *SyncStats) error {
+	type key struct{ year, month int }
+
+	localEntries, err := s.getBufferHoursFromDB(s.localDB, "sqlite")
+	if err != nil {
+		return fmt.Errorf("failed to get local buffer hours: %w", err)
+	}
+	remoteEntries, err := s.getBufferHoursFromDB(s.remoteDB, "postgres")
+	if err != nil {
+		return fmt.Errorf("failed to get remote buffer hours: %w", err)
+	}
+
+	localMap := make(map[key]db.BufferEntry, len(localEntries))
+	for _, e := range localEntries {
+		localMap[key{e.Year, e.Month}] = e
+	}
+	remoteMap := make(map[key]db.BufferEntry, len(remoteEntries))
+	for _, e := range remoteEntries {
+		remoteMap[key{e.Year, e.Month}] = e
+	}
+
+	if direction == SyncBidirectional || direction == SyncPushOnly {
+		for k, local := range localMap {
+			remote, exists := remoteMap[k]
+			if !exists {
+				if err := s.insertBufferHoursToRemote(local); err != nil {
+					return fmt.Errorf("failed to insert buffer %d-%02d to remote: %w", k.year, k.month, err)
+				}
+				stats.RecordsPushed++
+			} else if local.UpdatedAt > remote.UpdatedAt {
+				if err := s.updateBufferHoursInRemote(local, remote.Id); err != nil {
+					return fmt.Errorf("failed to update buffer %d-%02d in remote: %w", k.year, k.month, err)
+				}
+				stats.RecordsPushed++
+			}
+		}
+	}
+
+	if direction == SyncBidirectional || direction == SyncPullOnly {
+		for k, remote := range remoteMap {
+			local, exists := localMap[k]
+			if !exists {
+				if err := s.insertBufferHoursToLocal(remote); err != nil {
+					return fmt.Errorf("failed to insert buffer %d-%02d to local: %w", k.year, k.month, err)
+				}
+				stats.RecordsPulled++
+			} else if remote.UpdatedAt > local.UpdatedAt {
+				if err := s.updateBufferHoursInLocal(remote, local.Id); err != nil {
+					return fmt.Errorf("failed to update buffer %d-%02d in local: %w", k.year, k.month, err)
 				}
 				stats.RecordsPulled++
 			}

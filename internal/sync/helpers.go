@@ -297,6 +297,51 @@ func (s *SyncService) updateVacationCarryoverInLocal(e db.VacationCarryover, loc
 	return err
 }
 
+// ============== Buffer Hours ==============
+
+func (s *SyncService) getBufferHoursFromDB(dbConn *sql.DB, dbType string) ([]db.BufferEntry, error) {
+	query := `SELECT id, year, month, hours, COALESCE(notes, ''), COALESCE(created_at, ''), COALESCE(updated_at, '') FROM buffer_hours`
+	rows, err := dbConn.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []db.BufferEntry
+	for rows.Next() {
+		var e db.BufferEntry
+		if err := rows.Scan(&e.Id, &e.Year, &e.Month, &e.Hours, &e.Notes, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func (s *SyncService) insertBufferHoursToRemote(e db.BufferEntry) error {
+	query := `INSERT INTO buffer_hours (year, month, hours, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`
+	_, err := s.remoteDB.Exec(query, e.Year, e.Month, e.Hours, e.Notes, e.CreatedAt, e.UpdatedAt)
+	return err
+}
+
+func (s *SyncService) updateBufferHoursInRemote(e db.BufferEntry, remoteId int) error {
+	query := `UPDATE buffer_hours SET year = $1, month = $2, hours = $3, notes = $4, updated_at = $5 WHERE id = $6`
+	_, err := s.remoteDB.Exec(query, e.Year, e.Month, e.Hours, e.Notes, e.UpdatedAt, remoteId)
+	return err
+}
+
+func (s *SyncService) insertBufferHoursToLocal(e db.BufferEntry) error {
+	query := `INSERT INTO buffer_hours (year, month, hours, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+	_, err := s.localDB.Exec(query, e.Year, e.Month, e.Hours, e.Notes, e.CreatedAt, e.UpdatedAt)
+	return err
+}
+
+func (s *SyncService) updateBufferHoursInLocal(e db.BufferEntry, localId int) error {
+	query := `UPDATE buffer_hours SET year = ?, month = ?, hours = ?, notes = ?, updated_at = ? WHERE id = ?`
+	_, err := s.localDB.Exec(query, e.Year, e.Month, e.Hours, e.Notes, e.UpdatedAt, localId)
+	return err
+}
+
 // InitialMigration performs a one-time migration from local to remote
 // This is used when setting up sync for the first time
 func (s *SyncService) InitialMigration() error {
