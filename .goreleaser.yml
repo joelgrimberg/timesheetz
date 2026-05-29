@@ -158,4 +158,26 @@ brews:
         timesheetz --help
 
     test: |
-      system "#{bin}/timesheetz --version" 
+      system "#{bin}/timesheetz --version"
+
+aurs:
+  -
+    name: timesheetz-bin
+    homepage: "https://github.com/joelgrimberg/timesheetz"
+    description: "Timesheet tracking TUI and REST API for freelancers"
+    maintainers:
+      - 'Joël Grimberg <joelgrimberg@gmail.com>'
+    license: "MIT"
+    private_key: '{{ .Env.AUR_KEY }}'
+    git_url: 'ssh://aur@aur.archlinux.org/timesheetz-bin.git'
+    provides:
+      - timesheetz
+    conflicts:
+      - timesheetz
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    package: |-
+      install -Dm755 "./timesheet" "${pkgdir}/usr/bin/timesheetz"
+      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/timesheetz-bin/LICENSE"
+      install -Dm644 "./README.md" "${pkgdir}/usr/share/doc/timesheetz-bin/README.md"

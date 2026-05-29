@@ -9,17 +9,25 @@ The actual AUR repo lives at:
 
     ssh://aur@aur.archlinux.org/timesheetz-bin.git
 
-This directory is just where the canonical PKGBUILD is kept; the file is
-copied into the AUR repo and pushed there by `scripts/release-aur.sh`.
+## How updates happen now
 
-## Updating after a new GitHub release
+On every tag push, the GitHub Actions release workflow runs GoReleaser,
+which (via the `aurs:` block in `.goreleaser.yml`) generates a fresh
+PKGBUILD and pushes it to the AUR remote using the dedicated `AUR_KEY`
+deploy key stored as a GitHub Actions secret. There is no manual step
+in the happy path.
 
-From the main repo root, after the GoReleaser pipeline for the new tag
-has finished:
+The in-repo files in this directory (PKGBUILD, .SRCINFO) are kept as a
+reviewable reference and as the source for the manual fallback below;
+the PKGBUILD GoReleaser actually pushes is generated from the `aurs:`
+template, not copied from here. If you change the install layout (e.g.
+adding shell completions), update both the `aurs.package` block in
+`.goreleaser.yml` and the local PKGBUILD so they stay in sync.
 
-```
-./scripts/release-aur.sh <version> --build --publish
-```
+## Manual fallback (when CI is broken or for testing)
+
+`scripts/release-aur.sh <version> [--build] [--publish]` does the same
+work locally:
 
 For example:
 
@@ -51,23 +59,16 @@ So the in-repo copy stays in sync with what AUR users actually pull.
 
 ## One-time AUR bootstrap
 
-Skip if your AUR account + SSH key are already wired up.
+Already done for this repo. For reference:
 
 1. Register at https://aur.archlinux.org/register.
-2. Under **My Account → SSH Public Key**, paste your public key (e.g.
-   `cat ~/.ssh/id_ed25519.pub`).
-3. Confirm auth works:
-   ```
-   ssh aur@aur.archlinux.org help
-   ```
-   You should get a non-interactive help banner, not a permission denied.
-
-The first push to `ssh://aur@aur.archlinux.org/timesheetz-bin.git` is
-what reserves the package name. Easiest first run:
-
-```
-./scripts/release-aur.sh <current-version> --build --publish
-```
+2. Under **My Account → SSH Public Key**, paste both your personal
+   public key (for manual fallback access) and the CI deploy key's
+   public half. Multiple keys are supported, one per line.
+3. Add the CI deploy key's private half as a GitHub Actions secret
+   named `AUR_KEY` (used by the `aurs:` block in `.goreleaser.yml`).
+4. The first push reserves the package name. After that, every tagged
+   release auto-publishes via CI.
 
 ## Conventions worth remembering
 
