@@ -191,17 +191,16 @@ func main() {
 		dbPath := config.GetDBPath()
 		log.Printf("Database path: %s", dbPath)
 
-		// Check if database exists, if not initialize it
-		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-			log.Println("Database does not exist, initializing...")
-			if err := db.InitializeDatabase(dbPath); err != nil {
-				log.Fatalf("Error initializing database: %v", err)
-			}
-			log.Println("Database initialized successfully")
-		} else if err != nil {
+		if _, err := os.Stat(dbPath); err != nil && !os.IsNotExist(err) {
 			log.Fatalf("Error checking database: %v", err)
-		} else {
-			log.Println("Database file exists")
+		}
+
+		// Always run InitializeDatabase: it's idempotent (CREATE TABLE IF NOT
+		// EXISTS / ALTER TABLE error-tolerant) and lets new tables added in
+		// later releases reach existing databases without a manual migration.
+		log.Println("Initializing database (ensuring schema is up to date)...")
+		if err := db.InitializeDatabase(dbPath); err != nil {
+			log.Fatalf("Error initializing database: %v", err)
 		}
 
 		log.Println("Attempting to connect to database...")
