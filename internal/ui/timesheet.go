@@ -36,6 +36,7 @@ import (
 	"timesheet/internal/db"
 	printExcel "timesheet/internal/print-excel"
 	printPDF "timesheet/internal/print-pdf"
+	"timesheet/internal/workschedule"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -729,7 +730,31 @@ func (m TimesheetModel) View() string {
 	footerContent += fmt.Sprintf("%*d", 14-len(fmt.Sprintf("%d", m.columnTotals["sickHours"])), m.columnTotals["sickHours"])
 	footerContent += fmt.Sprintf("%*d", 14-len(fmt.Sprintf("%d", m.columnTotals["totalHours"])), m.columnTotals["totalHours"])
 
-	s += footerStyle.Render(footerContent) + "\n\n"
+	s += footerStyle.Render(footerContent) + "\n"
+
+	// Expected vs. logged hours for this month, driven by the user's
+	// configured work schedule. Δ is positive when over the target,
+	// negative when behind.
+	expected := workschedule.ExpectedHoursForMonth(m.currentYear, m.currentMonth, config.GetWorkSchedule())
+	delta := m.columnTotals["totalHours"] - expected
+
+	expectedLabel := lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Expected:")
+	expectedValue := lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("%dh", expected))
+
+	var deltaStr string
+	switch {
+	case delta < 0:
+		deltaStr = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196")).
+			Render(fmt.Sprintf("Δ %dh", delta)) // negative sign comes from the number
+	case delta > 0:
+		deltaStr = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("220")).
+			Render(fmt.Sprintf("Δ +%dh", delta))
+	default:
+		deltaStr = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).
+			Render("Δ 0h ✓")
+	}
+
+	s += fmt.Sprintf("%s %s    %s\n\n", expectedLabel, expectedValue, deltaStr)
 
 	if m.showHelp {
 		// Full help view

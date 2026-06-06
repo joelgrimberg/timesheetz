@@ -266,6 +266,7 @@ type ConfigModel struct {
 	trainingCategoryRowIdx int
 	vacationTargetRowIdx   int
 	vacationCategoryRowIdx int
+	workScheduleRowIdx     [7]int // indexed by time.Weekday
 
 	// Update checking fields
 	latestVersion   string
@@ -366,6 +367,7 @@ func InitialConfigModel() ConfigModel {
 		trainingCategoryRowIdx: indices.trainingCategoryRowIdx,
 		vacationTargetRowIdx:   indices.vacationTargetRowIdx,
 		vacationCategoryRowIdx: indices.vacationCategoryRowIdx,
+		workScheduleRowIdx:     indices.workScheduleRowIdx,
 	}
 }
 
@@ -982,6 +984,7 @@ type configRowIndices struct {
 	trainingCategoryRowIdx int
 	vacationTargetRowIdx   int
 	vacationCategoryRowIdx int
+	workScheduleRowIdx     [7]int // indexed by time.Weekday
 }
 
 // buildTableRows builds the configuration table rows with update info
@@ -1136,6 +1139,32 @@ func (m ConfigModel) buildTableRows(cfg *config.Config) ([]table.Row, configRowI
 		rows = append(rows, table.Row{"  Category", cfg.VacationHours.Category})
 	}
 
+	// Work Schedule (hours per weekday). Falls back to defaults when the
+	// config field is the zero value (e.g. upgraded from older versions).
+	ws := cfg.WorkSchedule
+	if ws == (config.WorkSchedule{}) {
+		ws = config.DefaultWorkSchedule()
+	}
+	weeklyTotal := ws.Monday + ws.Tuesday + ws.Wednesday + ws.Thursday + ws.Friday + ws.Saturday + ws.Sunday
+	rows = append(rows, table.Row{"Work Schedule", fmt.Sprintf("%dh / week", weeklyTotal)})
+	wsDays := []struct {
+		label string
+		wd    time.Weekday
+		hours int
+	}{
+		{"  Monday", time.Monday, ws.Monday},
+		{"  Tuesday", time.Tuesday, ws.Tuesday},
+		{"  Wednesday", time.Wednesday, ws.Wednesday},
+		{"  Thursday", time.Thursday, ws.Thursday},
+		{"  Friday", time.Friday, ws.Friday},
+		{"  Saturday", time.Saturday, ws.Saturday},
+		{"  Sunday", time.Sunday, ws.Sunday},
+	}
+	for _, d := range wsDays {
+		indices.workScheduleRowIdx[d.wd] = len(rows)
+		rows = append(rows, table.Row{d.label, strconv.Itoa(d.hours)})
+	}
+
 	return rows, indices
 }
 
@@ -1190,6 +1219,34 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				case "Vacation Category":
 					cfg.VacationHours.Category = saveMsg.Value
+				case "Monday hours":
+					if h, err := strconv.Atoi(strings.TrimSpace(saveMsg.Value)); err == nil {
+						cfg.WorkSchedule.Monday = h
+					}
+				case "Tuesday hours":
+					if h, err := strconv.Atoi(strings.TrimSpace(saveMsg.Value)); err == nil {
+						cfg.WorkSchedule.Tuesday = h
+					}
+				case "Wednesday hours":
+					if h, err := strconv.Atoi(strings.TrimSpace(saveMsg.Value)); err == nil {
+						cfg.WorkSchedule.Wednesday = h
+					}
+				case "Thursday hours":
+					if h, err := strconv.Atoi(strings.TrimSpace(saveMsg.Value)); err == nil {
+						cfg.WorkSchedule.Thursday = h
+					}
+				case "Friday hours":
+					if h, err := strconv.Atoi(strings.TrimSpace(saveMsg.Value)); err == nil {
+						cfg.WorkSchedule.Friday = h
+					}
+				case "Saturday hours":
+					if h, err := strconv.Atoi(strings.TrimSpace(saveMsg.Value)); err == nil {
+						cfg.WorkSchedule.Saturday = h
+					}
+				case "Sunday hours":
+					if h, err := strconv.Atoi(strings.TrimSpace(saveMsg.Value)); err == nil {
+						cfg.WorkSchedule.Sunday = h
+					}
 				}
 				config.SaveConfig(cfg)
 				// Rebuild the table with updated values
@@ -1425,6 +1482,30 @@ func (m ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cursor == m.vacationCategoryRowIdx {
 				m.textModal = InitialTextInputModal("Vacation Category", cfg.VacationHours.Category)
 				return m, m.textModal.Init()
+			}
+
+			// Work Schedule rows (one per weekday).
+			ws := cfg.WorkSchedule
+			if ws == (config.WorkSchedule{}) {
+				ws = config.DefaultWorkSchedule()
+			}
+			wsLookup := map[time.Weekday]struct {
+				field string
+				value int
+			}{
+				time.Monday:    {"Monday hours", ws.Monday},
+				time.Tuesday:   {"Tuesday hours", ws.Tuesday},
+				time.Wednesday: {"Wednesday hours", ws.Wednesday},
+				time.Thursday:  {"Thursday hours", ws.Thursday},
+				time.Friday:    {"Friday hours", ws.Friday},
+				time.Saturday:  {"Saturday hours", ws.Saturday},
+				time.Sunday:    {"Sunday hours", ws.Sunday},
+			}
+			for wd, info := range wsLookup {
+				if cursor == m.workScheduleRowIdx[wd] {
+					m.textModal = InitialTextInputModal(info.field, strconv.Itoa(info.value))
+					return m, m.textModal.Init()
+				}
 			}
 
 			// Boolean toggle fields

@@ -11,6 +11,7 @@ import (
 	"time"
 	"timesheet/internal/dbcheck"
 	"timesheet/internal/logging"
+	"timesheet/internal/workschedule"
 
 	"github.com/charmbracelet/huh"
 	"golang.org/x/term"
@@ -42,6 +43,46 @@ type TrainingHours struct {
 type VacationHours struct {
 	YearlyTarget int    `json:"yearlyTarget"`
 	Category     string `json:"category"`
+}
+
+// WorkSchedule represents the expected hours per weekday. Used to compute the
+// monthly target shown in the timesheet footer.
+type WorkSchedule struct {
+	Monday    int `json:"monday"`
+	Tuesday   int `json:"tuesday"`
+	Wednesday int `json:"wednesday"`
+	Thursday  int `json:"thursday"`
+	Friday    int `json:"friday"`
+	Saturday  int `json:"saturday"`
+	Sunday    int `json:"sunday"`
+}
+
+// ToSchedule converts the JSON-friendly struct into the canonical
+// workschedule.Schedule (indexed by time.Weekday).
+func (w WorkSchedule) ToSchedule() workschedule.Schedule {
+	return workschedule.Schedule{
+		time.Sunday:    w.Sunday,
+		time.Monday:    w.Monday,
+		time.Tuesday:   w.Tuesday,
+		time.Wednesday: w.Wednesday,
+		time.Thursday:  w.Thursday,
+		time.Friday:    w.Friday,
+		time.Saturday:  w.Saturday,
+	}
+}
+
+// DefaultWorkSchedule returns the built-in default schedule:
+// 9 hours on Mon/Tue/Wed/Fri, 0 on Thu/Sat/Sun.
+func DefaultWorkSchedule() WorkSchedule {
+	return WorkSchedule{
+		Monday:    9,
+		Tuesday:   9,
+		Wednesday: 9,
+		Thursday:  0,
+		Friday:    9,
+		Saturday:  0,
+		Sunday:    0,
+	}
 }
 
 // Config represents the application configuration
@@ -83,6 +124,10 @@ type Config struct {
 
 	// Vacation Hours Configuration
 	VacationHours VacationHours `json:"vacationHours"`
+
+	// Work Schedule (expected hours per weekday). Drives the monthly target
+	// shown in the timesheet footer.
+	WorkSchedule WorkSchedule `json:"workSchedule"`
 }
 
 // SetRuntimeDevMode sets the runtime development mode
@@ -286,6 +331,9 @@ func RequireConfig() {
 						YearlyTarget: 0, // Default to 0 hours
 						Category:     "Vacation",
 					},
+
+					// Work Schedule (Mon/Tue/Wed/Fri × 9 = 36 hours/week)
+					WorkSchedule: DefaultWorkSchedule(),
 				}
 				SaveConfig(config)
 				logging.Log("Default config created successfully")
@@ -333,6 +381,9 @@ func RequireConfig() {
 					YearlyTarget: 0, // Default to 0 hours
 					Category:     "Vacation",
 				},
+
+				// Work Schedule (Mon/Tue/Wed/Fri × 9 = 36 hours/week)
+				WorkSchedule: DefaultWorkSchedule(),
 			}
 
 			// Should we run in accessible mode?
@@ -345,6 +396,28 @@ func RequireConfig() {
 			dbLocationStr := ""
 			dbBackendChoice := "sqlite"
 			postgresURLStr := ""
+
+			// Work-schedule defaults: Mon/Tue/Wed/Fri × 9 = 36/week
+			ws := DefaultWorkSchedule()
+			monStr := strconv.Itoa(ws.Monday)
+			tueStr := strconv.Itoa(ws.Tuesday)
+			wedStr := strconv.Itoa(ws.Wednesday)
+			thuStr := strconv.Itoa(ws.Thursday)
+			friStr := strconv.Itoa(ws.Friday)
+			satStr := strconv.Itoa(ws.Saturday)
+			sunStr := strconv.Itoa(ws.Sunday)
+
+			// Validator: must parse as int in [0,24].
+			hoursValidator := func(s string) error {
+				h, err := strconv.Atoi(strings.TrimSpace(s))
+				if err != nil {
+					return fmt.Errorf("must be a whole number")
+				}
+				if h < 0 || h > 24 {
+					return fmt.Errorf("must be between 0 and 24")
+				}
+				return nil
+			}
 
 			form := huh.NewForm(
 				huh.NewGroup(huh.NewNote().
@@ -438,6 +511,20 @@ func RequireConfig() {
 						Title("How many vacation hours are allocated per year?").
 						Placeholder("0").
 						Description("This is the total number of vacation hours you can use per year."),
+				),
+
+				// Work Schedule Configuration
+				huh.NewGroup(
+					huh.NewNote().
+						Title("Work Schedule").
+						Description("How many hours you work on each weekday. Used to compute your monthly target (e.g. 36/week × ~4.3 weeks ≈ a typical month's hours). Enter 0 for days you don't work."),
+					huh.NewInput().Value(&monStr).Title("Monday hours").Placeholder("9").Validate(hoursValidator),
+					huh.NewInput().Value(&tueStr).Title("Tuesday hours").Placeholder("9").Validate(hoursValidator),
+					huh.NewInput().Value(&wedStr).Title("Wednesday hours").Placeholder("9").Validate(hoursValidator),
+					huh.NewInput().Value(&thuStr).Title("Thursday hours").Placeholder("0").Validate(hoursValidator),
+					huh.NewInput().Value(&friStr).Title("Friday hours").Placeholder("9").Validate(hoursValidator),
+					huh.NewInput().Value(&satStr).Title("Saturday hours").Placeholder("0").Validate(hoursValidator),
+					huh.NewInput().Value(&sunStr).Title("Sunday hours").Placeholder("0").Validate(hoursValidator),
 				),
 
 				// API Server Configuration
@@ -582,6 +669,25 @@ func RequireConfig() {
 			}
 			config.VacationHours.YearlyTarget = vacationHours
 
+			// Parse the work-schedule inputs. Validator already rejected bad
+			// input, so atoi shouldn't fail; fall back to defaults if it does.
+			parseHours := func(s string, fallback int) int {
+				h, err := strconv.Atoi(strings.TrimSpace(s))
+				if err != nil {
+					return fallback
+				}
+				return h
+			}
+			config.WorkSchedule = WorkSchedule{
+				Monday:    parseHours(monStr, ws.Monday),
+				Tuesday:   parseHours(tueStr, ws.Tuesday),
+				Wednesday: parseHours(wedStr, ws.Wednesday),
+				Thursday:  parseHours(thuStr, ws.Thursday),
+				Friday:    parseHours(friStr, ws.Friday),
+				Saturday:  parseHours(satStr, ws.Saturday),
+				Sunday:    parseHours(sunStr, ws.Sunday),
+			}
+
 			// Set database backend choice
 			config.DBType = dbBackendChoice
 			if dbBackendChoice == "postgres" {
@@ -609,6 +715,19 @@ func RequireConfig() {
 	} else {
 		// Config file exists and is accessible
 		logging.Log("Config file found at: %s", configPath)
+		// One-time migration: backfill workSchedule for configs written by
+		// older versions. Without this, editing a single weekday in the
+		// Config tab would leave the others at zero.
+		if existing, err := GetConfig(); err == nil {
+			if (existing.WorkSchedule == WorkSchedule{}) {
+				existing.WorkSchedule = DefaultWorkSchedule()
+				if err := SaveConfig(existing); err != nil {
+					logging.Log("Warning: failed to backfill workSchedule: %v", err)
+				} else {
+					logging.Log("Backfilled workSchedule with defaults")
+				}
+			}
+		}
 	}
 }
 
@@ -876,6 +995,21 @@ func GetDBType() string {
 	}
 
 	return config.DBType
+}
+
+// GetWorkSchedule returns the user's weekly schedule. Falls back to the
+// default (Mon/Tue/Wed/Fri × 9) when no schedule is configured (e.g. older
+// config files written before this field existed).
+func GetWorkSchedule() workschedule.Schedule {
+	cfg, err := GetConfig()
+	if err != nil {
+		return workschedule.Default()
+	}
+	s := cfg.WorkSchedule.ToSchedule()
+	if s.IsZero() {
+		return workschedule.Default()
+	}
+	return s
 }
 
 // GetPostgresURL returns the PostgreSQL connection URL
