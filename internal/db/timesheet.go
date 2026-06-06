@@ -101,26 +101,29 @@ func GetTrainingBudgetEntriesForYear(year int) ([]TrainingBudgetEntry, error) {
 
 // AddTrainingBudgetEntry adds a new training budget entry
 func AddTrainingBudgetEntry(entry TrainingBudgetEntry) error {
-	query := `INSERT INTO training_budget (date, training_name, hours, cost_without_vat)
-              VALUES (?, ?, ?, ?)`
+	now := NowTimestamp()
+	query := `INSERT INTO training_budget (date, training_name, hours, cost_without_vat, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?)`
 	_, err := db.Exec(query,
 		entry.Date,
 		entry.Training_name,
 		entry.Hours,
-		entry.Cost_without_vat)
+		entry.Cost_without_vat,
+		now, now)
 	return err
 }
 
 // UpdateTrainingBudgetEntry updates an existing training budget entry
 func UpdateTrainingBudgetEntry(entry TrainingBudgetEntry) error {
-	query := `UPDATE training_budget 
-              SET date = ?, training_name = ?, hours = ?, cost_without_vat = ?
+	query := `UPDATE training_budget
+              SET date = ?, training_name = ?, hours = ?, cost_without_vat = ?, updated_at = ?
               WHERE id = ?`
 	_, err := db.Exec(query,
 		entry.Date,
 		entry.Training_name,
 		entry.Hours,
 		entry.Cost_without_vat,
+		NowTimestamp(),
 		entry.Id)
 	return err
 }

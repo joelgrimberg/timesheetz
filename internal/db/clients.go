@@ -146,15 +146,15 @@ func GetClientByName(name string) (Client, error) {
 
 // AddClient creates a new client and returns the new client ID
 func AddClient(client Client) (int, error) {
-	query := `INSERT INTO clients (name, created_at, is_active) VALUES (?, ?, ?)`
+	query := `INSERT INTO clients (name, created_at, updated_at, is_active) VALUES (?, ?, ?, ?)`
 
-	createdAt := time.Now().Format("2006-01-02 15:04:05")
+	now := NowTimestamp()
 	isActive := 0
 	if client.IsActive {
 		isActive = 1
 	}
 
-	result, err := db.Exec(query, client.Name, createdAt, isActive)
+	result, err := db.Exec(query, client.Name, now, now, isActive)
 	if err != nil {
 		return 0, fmt.Errorf("failed to add client: %w", err)
 	}
@@ -169,14 +169,14 @@ func AddClient(client Client) (int, error) {
 
 // UpdateClient updates an existing client
 func UpdateClient(client Client) error {
-	query := `UPDATE clients SET name = ?, is_active = ? WHERE id = ?`
+	query := `UPDATE clients SET name = ?, is_active = ?, updated_at = ? WHERE id = ?`
 
 	isActive := 0
 	if client.IsActive {
 		isActive = 1
 	}
 
-	result, err := db.Exec(query, client.Name, isActive, client.Id)
+	result, err := db.Exec(query, client.Name, isActive, NowTimestamp(), client.Id)
 	if err != nil {
 		return fmt.Errorf("failed to update client: %w", err)
 	}
@@ -216,9 +216,9 @@ func DeleteClient(id int) error {
 
 // DeactivateClient sets a client to inactive instead of deleting
 func DeactivateClient(id int) error {
-	query := `UPDATE clients SET is_active = 0 WHERE id = ?`
+	query := `UPDATE clients SET is_active = 0, updated_at = ? WHERE id = ?`
 
-	result, err := db.Exec(query, id)
+	result, err := db.Exec(query, NowTimestamp(), id)
 	if err != nil {
 		return fmt.Errorf("failed to deactivate client: %w", err)
 	}
@@ -289,12 +289,12 @@ func GetClientRateById(id int) (ClientRate, error) {
 
 // AddClientRate adds a new rate for a client
 func AddClientRate(rate ClientRate) error {
-	query := `INSERT INTO client_rates (client_id, hourly_rate, effective_date, notes, created_at)
-	          VALUES (?, ?, ?, ?, ?)`
+	query := `INSERT INTO client_rates (client_id, hourly_rate, effective_date, notes, created_at, updated_at)
+	          VALUES (?, ?, ?, ?, ?, ?)`
 
-	createdAt := time.Now().Format("2006-01-02 15:04:05")
+	now := NowTimestamp()
 
-	_, err := db.Exec(query, rate.ClientId, rate.HourlyRate, rate.EffectiveDate, rate.Notes, createdAt)
+	_, err := db.Exec(query, rate.ClientId, rate.HourlyRate, rate.EffectiveDate, rate.Notes, now, now)
 	if err != nil {
 		return fmt.Errorf("failed to add client rate: %w", err)
 	}
@@ -305,10 +305,10 @@ func AddClientRate(rate ClientRate) error {
 // UpdateClientRate updates an existing rate
 func UpdateClientRate(rate ClientRate) error {
 	query := `UPDATE client_rates
-	          SET hourly_rate = ?, effective_date = ?, notes = ?
+	          SET hourly_rate = ?, effective_date = ?, notes = ?, updated_at = ?
 	          WHERE id = ?`
 
-	result, err := db.Exec(query, rate.HourlyRate, rate.EffectiveDate, rate.Notes, rate.Id)
+	result, err := db.Exec(query, rate.HourlyRate, rate.EffectiveDate, rate.Notes, NowTimestamp(), rate.Id)
 	if err != nil {
 		return fmt.Errorf("failed to update client rate: %w", err)
 	}

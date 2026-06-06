@@ -137,24 +137,26 @@ func (p *PostgresDBLayer) GetTimesheetEntryByDate(date string) (TimesheetEntry, 
 }
 
 func (p *PostgresDBLayer) AddTimesheetEntry(entry TimesheetEntry) error {
-	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	now := NowTimestamp()
+	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	_, err := pgDB.Exec(query,
 		entry.Date, entry.Client_name, entry.Client_hours, entry.Vacation_hours,
-		entry.Idle_hours, entry.Training_hours, entry.Sick_hours, entry.Holiday_hours)
+		entry.Idle_hours, entry.Training_hours, entry.Sick_hours, entry.Holiday_hours,
+		now, now)
 	return err
 }
 
 func (p *PostgresDBLayer) UpdateTimesheetEntry(entry TimesheetEntry) error {
 	query := `UPDATE timesheet
 		SET client_name = $1, client_hours = $2, vacation_hours = $3, idle_hours = $4,
-		    training_hours = $5, holiday_hours = $6, sick_hours = $7
-		WHERE date = $8`
+		    training_hours = $5, holiday_hours = $6, sick_hours = $7, updated_at = $8
+		WHERE date = $9`
 
 	result, err := pgDB.Exec(query,
 		entry.Client_name, entry.Client_hours, entry.Vacation_hours,
 		entry.Idle_hours, entry.Training_hours, entry.Holiday_hours,
-		entry.Sick_hours, entry.Date)
+		entry.Sick_hours, NowTimestamp(), entry.Date)
 	if err != nil {
 		return fmt.Errorf("failed to update record: %w", err)
 	}
@@ -305,16 +307,16 @@ func (p *PostgresDBLayer) GetVacationCarryoverForYear(year int) (VacationCarryov
 }
 
 func (p *PostgresDBLayer) SetVacationCarryover(carryover VacationCarryover) error {
-	// PostgreSQL upsert using ON CONFLICT
+	now := NowTimestamp()
 	_, err := pgDB.Exec(`
-		INSERT INTO vacation_carryover (year, carryover_hours, source_year, updated_at, notes)
-		VALUES ($1, $2, $3, CURRENT_TIMESTAMP, $4)
+		INSERT INTO vacation_carryover (year, carryover_hours, source_year, created_at, updated_at, notes)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (year) DO UPDATE SET
 			carryover_hours = EXCLUDED.carryover_hours,
 			source_year = EXCLUDED.source_year,
-			updated_at = CURRENT_TIMESTAMP,
+			updated_at = EXCLUDED.updated_at,
 			notes = EXCLUDED.notes
-	`, carryover.Year, carryover.CarryoverHours, carryover.SourceYear, carryover.Notes)
+	`, carryover.Year, carryover.CarryoverHours, carryover.SourceYear, now, now, carryover.Notes)
 
 	if err != nil {
 		return fmt.Errorf("failed to set vacation carryover: %w", err)
@@ -459,14 +461,15 @@ func (p *PostgresDBLayer) UpsertBufferEntry(entry BufferEntry) error {
 	if entry.Month < 1 || entry.Month > 12 {
 		return fmt.Errorf("month must be between 1 and 12")
 	}
+	now := NowTimestamp()
 	_, err := pgDB.Exec(`
 		INSERT INTO buffer_hours (year, month, hours, notes, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (year, month) DO UPDATE SET
 			hours = EXCLUDED.hours,
 			notes = EXCLUDED.notes,
-			updated_at = CURRENT_TIMESTAMP
-	`, entry.Year, entry.Month, entry.Hours, entry.Notes)
+			updated_at = EXCLUDED.updated_at
+	`, entry.Year, entry.Month, entry.Hours, entry.Notes, now, now)
 	if err != nil {
 		return fmt.Errorf("failed to upsert buffer entry: %w", err)
 	}
@@ -511,17 +514,18 @@ func (p *PostgresDBLayer) GetTrainingBudgetEntriesForYear(year int) ([]TrainingB
 }
 
 func (p *PostgresDBLayer) AddTrainingBudgetEntry(entry TrainingBudgetEntry) error {
-	query := `INSERT INTO training_budget (date, training_name, hours, cost_without_vat)
-		VALUES ($1, $2, $3, $4)`
-	_, err := pgDB.Exec(query, entry.Date, entry.Training_name, entry.Hours, entry.Cost_without_vat)
+	now := NowTimestamp()
+	query := `INSERT INTO training_budget (date, training_name, hours, cost_without_vat, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)`
+	_, err := pgDB.Exec(query, entry.Date, entry.Training_name, entry.Hours, entry.Cost_without_vat, now, now)
 	return err
 }
 
 func (p *PostgresDBLayer) UpdateTrainingBudgetEntry(entry TrainingBudgetEntry) error {
 	query := `UPDATE training_budget
-		SET date = $1, training_name = $2, hours = $3, cost_without_vat = $4
-		WHERE id = $5`
-	_, err := pgDB.Exec(query, entry.Date, entry.Training_name, entry.Hours, entry.Cost_without_vat, entry.Id)
+		SET date = $1, training_name = $2, hours = $3, cost_without_vat = $4, updated_at = $5
+		WHERE id = $6`
+	_, err := pgDB.Exec(query, entry.Date, entry.Training_name, entry.Hours, entry.Cost_without_vat, NowTimestamp(), entry.Id)
 	return err
 }
 
@@ -625,15 +629,15 @@ func (p *PostgresDBLayer) GetClientByName(name string) (Client, error) {
 }
 
 func (p *PostgresDBLayer) AddClient(client Client) (int, error) {
-	query := `INSERT INTO clients (name, created_at, is_active) VALUES ($1, $2, $3) RETURNING id`
-	createdAt := time.Now().Format("2006-01-02 15:04:05")
+	query := `INSERT INTO clients (name, created_at, updated_at, is_active) VALUES ($1, $2, $3, $4) RETURNING id`
+	now := NowTimestamp()
 	isActive := 0
 	if client.IsActive {
 		isActive = 1
 	}
 
 	var id int
-	err := pgDB.QueryRow(query, client.Name, createdAt, isActive).Scan(&id)
+	err := pgDB.QueryRow(query, client.Name, now, now, isActive).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("failed to add client: %w", err)
 	}
@@ -641,13 +645,13 @@ func (p *PostgresDBLayer) AddClient(client Client) (int, error) {
 }
 
 func (p *PostgresDBLayer) UpdateClient(client Client) error {
-	query := `UPDATE clients SET name = $1, is_active = $2 WHERE id = $3`
+	query := `UPDATE clients SET name = $1, is_active = $2, updated_at = $3 WHERE id = $4`
 	isActive := 0
 	if client.IsActive {
 		isActive = 1
 	}
 
-	result, err := pgDB.Exec(query, client.Name, isActive, client.Id)
+	result, err := pgDB.Exec(query, client.Name, isActive, NowTimestamp(), client.Id)
 	if err != nil {
 		return fmt.Errorf("failed to update client: %w", err)
 	}
@@ -679,7 +683,7 @@ func (p *PostgresDBLayer) DeleteClient(id int) error {
 }
 
 func (p *PostgresDBLayer) DeactivateClient(id int) error {
-	result, err := pgDB.Exec(`UPDATE clients SET is_active = 0 WHERE id = $1`, id)
+	result, err := pgDB.Exec(`UPDATE clients SET is_active = 0, updated_at = $1 WHERE id = $2`, NowTimestamp(), id)
 	if err != nil {
 		return fmt.Errorf("failed to deactivate client: %w", err)
 	}
@@ -737,10 +741,10 @@ func (p *PostgresDBLayer) GetClientRateById(id int) (ClientRate, error) {
 }
 
 func (p *PostgresDBLayer) AddClientRate(rate ClientRate) error {
-	query := `INSERT INTO client_rates (client_id, hourly_rate, effective_date, notes, created_at)
-		VALUES ($1, $2, $3, $4, $5)`
-	createdAt := time.Now().Format("2006-01-02 15:04:05")
-	_, err := pgDB.Exec(query, rate.ClientId, rate.HourlyRate, rate.EffectiveDate, rate.Notes, createdAt)
+	query := `INSERT INTO client_rates (client_id, hourly_rate, effective_date, notes, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)`
+	now := NowTimestamp()
+	_, err := pgDB.Exec(query, rate.ClientId, rate.HourlyRate, rate.EffectiveDate, rate.Notes, now, now)
 	if err != nil {
 		return fmt.Errorf("failed to add client rate: %w", err)
 	}
@@ -748,8 +752,8 @@ func (p *PostgresDBLayer) AddClientRate(rate ClientRate) error {
 }
 
 func (p *PostgresDBLayer) UpdateClientRate(rate ClientRate) error {
-	query := `UPDATE client_rates SET hourly_rate = $1, effective_date = $2, notes = $3 WHERE id = $4`
-	result, err := pgDB.Exec(query, rate.HourlyRate, rate.EffectiveDate, rate.Notes, rate.Id)
+	query := `UPDATE client_rates SET hourly_rate = $1, effective_date = $2, notes = $3, updated_at = $4 WHERE id = $5`
+	result, err := pgDB.Exec(query, rate.HourlyRate, rate.EffectiveDate, rate.Notes, NowTimestamp(), rate.Id)
 	if err != nil {
 		return fmt.Errorf("failed to update client rate: %w", err)
 	}
@@ -1068,8 +1072,8 @@ func UpdateTimesheetEntryByIdPostgres(id string, data map[string]any) error {
 	}
 
 	query += strings.Join(setStatements, ", ")
-	query += fmt.Sprintf(" WHERE id = $%d", argNum)
-	values = append(values, id)
+	query += fmt.Sprintf(", updated_at = $%d WHERE id = $%d", argNum, argNum+1)
+	values = append(values, NowTimestamp(), id)
 
 	result, err := pgDB.Exec(query, values...)
 	if err != nil {

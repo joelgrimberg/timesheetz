@@ -395,8 +395,9 @@ func AddTimesheetEntry(entry TimesheetEntry) error {
 	// fmt.Printf("DEBUG: AddTimesheetEntry - Date: %s, Client: %s, VacationHours: %d\n",
 	// 	entry.Date, entry.Client_name, entry.Vacation_hours)
 
-	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	now := NowTimestamp()
+	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := db.Exec(query,
 		entry.Date,
 		entry.Client_name,
@@ -405,9 +406,9 @@ func AddTimesheetEntry(entry TimesheetEntry) error {
 		entry.Idle_hours,
 		entry.Training_hours,
 		entry.Sick_hours,
-		entry.Holiday_hours)
+		entry.Holiday_hours,
+		now, now)
 	if err != nil {
-		// fmt.Printf("DEBUG: AddTimesheetEntry error: %v\n", err)
 		return err
 	}
 
@@ -417,9 +418,10 @@ func AddTimesheetEntry(entry TimesheetEntry) error {
 
 // UpdateTimesheetEntry updates an existing Timesheet entry by date
 func UpdateTimesheetEntry(entry TimesheetEntry) error {
-	query := `UPDATE timesheet 
-              SET client_name = ?, client_hours = ?, 
-                  vacation_hours = ?, idle_hours = ?, training_hours = ?, holiday_hours = ?, sick_hours = ?
+	query := `UPDATE timesheet
+              SET client_name = ?, client_hours = ?,
+                  vacation_hours = ?, idle_hours = ?, training_hours = ?, holiday_hours = ?, sick_hours = ?,
+                  updated_at = ?
               WHERE date = ?`
 
 	result, err := db.Exec(query,
@@ -430,6 +432,7 @@ func UpdateTimesheetEntry(entry TimesheetEntry) error {
 		entry.Training_hours,
 		entry.Holiday_hours,
 		entry.Sick_hours,
+		NowTimestamp(),
 		entry.Date)
 	if err != nil {
 		return fmt.Errorf("failed to update record: %w", err)
@@ -452,16 +455,14 @@ func PutTimesheetEntry(clientHours, vacationHours, idleHours, trainingHours, hol
 	// Get current date in YYYY-MM-DD format
 	currentDate := time.Now().Format("2006-01-02")
 
-	// Use prepared statement to prevent SQL injection
-	stmt, err := db.Prepare("INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, holiday_hours, sick_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+	now := NowTimestamp()
+	stmt, err := db.Prepare("INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, holiday_hours, sick_hours, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return 0, err
 	}
 	defer stmt.Close()
 
-	// Execute the statement with client name as parameter
-	// Note: Replaced hardcoded value 1 with a client name
-	result, err := stmt.Exec(currentDate, "default", clientHours, vacationHours, idleHours, trainingHours, holidayHours, sickHours)
+	result, err := stmt.Exec(currentDate, "default", clientHours, vacationHours, idleHours, trainingHours, holidayHours, sickHours, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -507,8 +508,8 @@ func UpdateTimesheetEntryById(id string, data map[string]any) error {
 	}
 
 	query += strings.Join(setStatements, ", ")
-	query += " WHERE id = ?"
-	values = append(values, id)
+	query += ", updated_at = ? WHERE id = ?"
+	values = append(values, NowTimestamp(), id)
 
 	// Execute the query
 	result, err := db.Exec(query, values...)
@@ -656,11 +657,11 @@ func GetVacationCarryoverForYear(year int) (VacationCarryover, error) {
 
 // SetVacationCarryover creates or updates carryover for a year
 func SetVacationCarryover(carryover VacationCarryover) error {
-	// Use REPLACE INTO for upsert behavior (insert or update)
+	now := NowTimestamp()
 	_, err := db.Exec(`
-		REPLACE INTO vacation_carryover (year, carryover_hours, source_year, updated_at, notes)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
-	`, carryover.Year, carryover.CarryoverHours, carryover.SourceYear, carryover.Notes)
+		REPLACE INTO vacation_carryover (year, carryover_hours, source_year, created_at, updated_at, notes)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, carryover.Year, carryover.CarryoverHours, carryover.SourceYear, now, now, carryover.Notes)
 
 	if err != nil {
 		return fmt.Errorf("failed to set vacation carryover: %w", err)
@@ -814,14 +815,15 @@ func UpsertBufferEntry(entry BufferEntry) error {
 	if entry.Month < 1 || entry.Month > 12 {
 		return fmt.Errorf("month must be between 1 and 12")
 	}
+	now := NowTimestamp()
 	_, err := db.Exec(`
 		INSERT INTO buffer_hours (year, month, hours, notes, created_at, updated_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(year, month) DO UPDATE SET
 			hours = excluded.hours,
 			notes = excluded.notes,
-			updated_at = CURRENT_TIMESTAMP
-	`, entry.Year, entry.Month, entry.Hours, entry.Notes)
+			updated_at = excluded.updated_at
+	`, entry.Year, entry.Month, entry.Hours, entry.Notes, now, now)
 	if err != nil {
 		return fmt.Errorf("failed to upsert buffer entry: %w", err)
 	}
