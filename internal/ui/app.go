@@ -389,9 +389,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncStatus = "Sync error"
 		} else {
 			m.syncStatus = FormatSyncStatus(m.lastSyncTime, false, false)
-			// Refresh views to show any synced data
+			// Refresh views to show any synced data. The timesheet rebuilds
+			// from the user's current month/cursor so a sync never yanks the
+			// selection back to today (or back to the current month if they
+			// were browsing history).
+			tsYear, tsMonth := m.TimesheetModel.currentYear, m.TimesheetModel.currentMonth
+			tsSelected := ""
+			if rows := m.TimesheetModel.table.Rows(); len(rows) > 0 {
+				if c := m.TimesheetModel.table.Cursor(); c >= 0 && c < len(rows) {
+					tsSelected = rows[c][0]
+				}
+			}
 			m.OverviewModel = InitialOverviewModel()
-			m.TimesheetModel = InitialTimesheetModel()
+			m.TimesheetModel = InitialTimesheetModelForMonth(tsYear, tsMonth, tsSelected)
 			m.TrainingModel = InitialTrainingModel()
 			m.TrainingBudgetModel = InitialTrainingBudgetModel()
 			m.VacationModel = InitialVacationModel()
