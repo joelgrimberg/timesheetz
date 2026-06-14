@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 )
 
@@ -128,11 +129,32 @@ func UpdateTrainingBudgetEntry(entry TrainingBudgetEntry) error {
 	return err
 }
 
-// DeleteTrainingBudgetEntry removes a training budget entry
+// DeleteTrainingBudgetEntry removes a training budget entry. The row's
+// (date, training_name) is captured before the delete so a tombstone keyed
+// by that pair (the sync key) can be written.
 func DeleteTrainingBudgetEntry(id int) error {
-	query := `DELETE FROM training_budget WHERE id = ?`
-	_, err := db.Exec(query, id)
-	return err
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var date, name string
+	err = tx.QueryRow(`SELECT date, training_name FROM training_budget WHERE id = ?`, id).Scan(&date, &name)
+	if err == sql.ErrNoRows {
+		return tx.Commit()
+	}
+	if err != nil {
+		return fmt.Errorf("failed to look up training budget entry: %w", err)
+	}
+
+	if _, err := tx.Exec(`DELETE FROM training_budget WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("failed to delete training budget entry: %w", err)
+	}
+	if err := WriteSqliteTombstone(tx, TombstoneTableTrainingBudget, TombstoneKeyTrainingBudget(date, name)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // GetTrainingBudgetEntry retrieves a single training budget entry by ID

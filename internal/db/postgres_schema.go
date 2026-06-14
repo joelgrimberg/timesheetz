@@ -95,6 +95,17 @@ func InitializePostgresDatabase() error {
 			UNIQUE(year, month)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_buffer_hours_year ON buffer_hours(year)`,
+		// tombstones records every delete so bidirectional sync can propagate
+		// removals instead of re-inserting whichever side still has the row.
+		// record_key is the natural sync key for the table_name (date, name,
+		// year, "year-month", "name|effective_date", "date|training_name").
+		`CREATE TABLE IF NOT EXISTS tombstones (
+			table_name TEXT NOT NULL,
+			record_key TEXT NOT NULL,
+			deleted_at TEXT NOT NULL,
+			PRIMARY KEY (table_name, record_key)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_tombstones_table ON tombstones(table_name)`,
 	}
 
 	for _, stmt := range stmts {

@@ -176,19 +176,51 @@ func (p *PostgresDBLayer) UpdateTimesheetEntryById(id string, data map[string]an
 }
 
 func (p *PostgresDBLayer) DeleteTimesheetEntryByDate(date string) error {
-	_, err := pgDB.Exec("DELETE FROM timesheet WHERE date = $1", date)
+	tx, err := pgDB.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`DELETE FROM timesheet WHERE date = $1`, date)
 	if err != nil {
 		return fmt.Errorf("failed to delete record: %w", err)
 	}
-	return nil
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if affected > 0 {
+		if err := WritePostgresTombstone(tx, TombstoneTableTimesheet, date); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (p *PostgresDBLayer) DeleteTimesheetEntry(id string) error {
-	_, err := pgDB.Exec("DELETE FROM timesheet WHERE id = $1", id)
+	tx, err := pgDB.Begin()
 	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var date string
+	err = tx.QueryRow(`SELECT date FROM timesheet WHERE id = $1`, id).Scan(&date)
+	if err == sql.ErrNoRows {
+		return tx.Commit()
+	}
+	if err != nil {
+		return fmt.Errorf("failed to look up entry: %w", err)
+	}
+
+	if _, err := tx.Exec(`DELETE FROM timesheet WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("failed to delete record: %w", err)
 	}
-	return nil
+	if err := WritePostgresTombstone(tx, TombstoneTableTimesheet, date); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (p *PostgresDBLayer) GetLastClientName() (string, error) {
@@ -325,11 +357,26 @@ func (p *PostgresDBLayer) SetVacationCarryover(carryover VacationCarryover) erro
 }
 
 func (p *PostgresDBLayer) DeleteVacationCarryover(year int) error {
-	_, err := pgDB.Exec(`DELETE FROM vacation_carryover WHERE year = $1`, year)
+	tx, err := pgDB.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`DELETE FROM vacation_carryover WHERE year = $1`, year)
 	if err != nil {
 		return fmt.Errorf("failed to delete vacation carryover: %w", err)
 	}
-	return nil
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if affected > 0 {
+		if err := WritePostgresTombstone(tx, TombstoneTableVacationCarryover, TombstoneKeyVacationCarryover(year)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // calculateAutoCarryoverPostgres computes the carryover for a year by looking at
@@ -477,11 +524,26 @@ func (p *PostgresDBLayer) UpsertBufferEntry(entry BufferEntry) error {
 }
 
 func (p *PostgresDBLayer) DeleteBufferEntry(year, month int) error {
-	_, err := pgDB.Exec(`DELETE FROM buffer_hours WHERE year = $1 AND month = $2`, year, month)
+	tx, err := pgDB.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`DELETE FROM buffer_hours WHERE year = $1 AND month = $2`, year, month)
 	if err != nil {
 		return fmt.Errorf("failed to delete buffer entry: %w", err)
 	}
-	return nil
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if affected > 0 {
+		if err := WritePostgresTombstone(tx, TombstoneTableBufferHours, TombstoneKeyBufferHours(year, month)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // Training budget operations
@@ -530,8 +592,28 @@ func (p *PostgresDBLayer) UpdateTrainingBudgetEntry(entry TrainingBudgetEntry) e
 }
 
 func (p *PostgresDBLayer) DeleteTrainingBudgetEntry(id int) error {
-	_, err := pgDB.Exec(`DELETE FROM training_budget WHERE id = $1`, id)
-	return err
+	tx, err := pgDB.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var date, name string
+	err = tx.QueryRow(`SELECT date, training_name FROM training_budget WHERE id = $1`, id).Scan(&date, &name)
+	if err == sql.ErrNoRows {
+		return tx.Commit()
+	}
+	if err != nil {
+		return fmt.Errorf("failed to look up training budget entry: %w", err)
+	}
+
+	if _, err := tx.Exec(`DELETE FROM training_budget WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("failed to delete training budget entry: %w", err)
+	}
+	if err := WritePostgresTombstone(tx, TombstoneTableTrainingBudget, TombstoneKeyTrainingBudget(date, name)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (p *PostgresDBLayer) GetTrainingBudgetEntry(id int) (TrainingBudgetEntry, error) {
@@ -667,11 +749,40 @@ func (p *PostgresDBLayer) UpdateClient(client Client) error {
 }
 
 func (p *PostgresDBLayer) DeleteClient(id int) error {
-	result, err := pgDB.Exec(`DELETE FROM clients WHERE id = $1`, id)
+	tx, err := pgDB.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var name string
+	err = tx.QueryRow(`SELECT name FROM clients WHERE id = $1`, id).Scan(&name)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("client not found")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to look up client: %w", err)
+	}
+
+	rateRows, err := tx.Query(`SELECT effective_date FROM client_rates WHERE client_id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("failed to query client rates: %w", err)
+	}
+	var rateDates []string
+	for rateRows.Next() {
+		var d string
+		if err := rateRows.Scan(&d); err != nil {
+			rateRows.Close()
+			return fmt.Errorf("failed to scan client rate: %w", err)
+		}
+		rateDates = append(rateDates, d)
+	}
+	rateRows.Close()
+
+	result, err := tx.Exec(`DELETE FROM clients WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete client: %w", err)
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to check rows affected: %w", err)
@@ -679,7 +790,16 @@ func (p *PostgresDBLayer) DeleteClient(id int) error {
 	if rowsAffected == 0 {
 		return fmt.Errorf("client not found")
 	}
-	return nil
+
+	if err := WritePostgresTombstone(tx, TombstoneTableClients, name); err != nil {
+		return err
+	}
+	for _, d := range rateDates {
+		if err := WritePostgresTombstone(tx, TombstoneTableClientRates, TombstoneKeyClientRate(name, d)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (p *PostgresDBLayer) DeactivateClient(id int) error {
@@ -769,11 +889,30 @@ func (p *PostgresDBLayer) UpdateClientRate(rate ClientRate) error {
 }
 
 func (p *PostgresDBLayer) DeleteClientRate(id int) error {
-	result, err := pgDB.Exec(`DELETE FROM client_rates WHERE id = $1`, id)
+	tx, err := pgDB.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var clientName, effectiveDate string
+	err = tx.QueryRow(`
+		SELECT c.name, r.effective_date
+		FROM client_rates r
+		JOIN clients c ON c.id = r.client_id
+		WHERE r.id = $1
+	`, id).Scan(&clientName, &effectiveDate)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("client rate not found")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to look up client rate: %w", err)
+	}
+
+	result, err := tx.Exec(`DELETE FROM client_rates WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete client rate: %w", err)
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to check rows affected: %w", err)
@@ -781,7 +920,11 @@ func (p *PostgresDBLayer) DeleteClientRate(id int) error {
 	if rowsAffected == 0 {
 		return fmt.Errorf("client rate not found")
 	}
-	return nil
+
+	if err := WritePostgresTombstone(tx, TombstoneTableClientRates, TombstoneKeyClientRate(clientName, effectiveDate)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (p *PostgresDBLayer) GetClientRateForDate(clientId int, date string) (ClientRate, error) {

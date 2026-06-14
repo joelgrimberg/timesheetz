@@ -342,6 +342,180 @@ func (s *SyncService) updateBufferHoursInLocal(e db.BufferEntry, localId int) er
 	return err
 }
 
+// ============== Tombstones ==============
+
+// getTombstonesFromDB returns a map of record_key -> deleted_at timestamp
+// for the given logical table name. Both SQLite and Postgres use the same
+// schema for this table.
+func (s *SyncService) getTombstonesFromDB(dbConn *sql.DB, dbType, tableName string) (map[string]string, error) {
+	// Use the dialect's positional placeholder.
+	var query string
+	if dbType == "postgres" {
+		query = `SELECT record_key, deleted_at FROM tombstones WHERE table_name = $1`
+	} else {
+		query = `SELECT record_key, deleted_at FROM tombstones WHERE table_name = ?`
+	}
+	rows, err := dbConn.Query(query, tableName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]string)
+	for rows.Next() {
+		var key, deletedAt string
+		if err := rows.Scan(&key, &deletedAt); err != nil {
+			return nil, err
+		}
+		out[key] = deletedAt
+	}
+	return out, rows.Err()
+}
+
+func (s *SyncService) insertTombstoneToRemote(table, key, deletedAt string) error {
+	_, err := s.remoteDB.Exec(
+		`INSERT INTO tombstones (table_name, record_key, deleted_at)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (table_name, record_key) DO UPDATE SET deleted_at = EXCLUDED.deleted_at`,
+		table, key, deletedAt,
+	)
+	return err
+}
+
+func (s *SyncService) insertTombstoneToLocal(table, key, deletedAt string) error {
+	_, err := s.localDB.Exec(
+		`INSERT OR REPLACE INTO tombstones (table_name, record_key, deleted_at) VALUES (?, ?, ?)`,
+		table, key, deletedAt,
+	)
+	return err
+}
+
+func (s *SyncService) deleteTombstoneFromRemote(table, key string) error {
+	_, err := s.remoteDB.Exec(`DELETE FROM tombstones WHERE table_name = $1 AND record_key = $2`, table, key)
+	return err
+}
+
+func (s *SyncService) deleteTombstoneFromLocal(table, key string) error {
+	_, err := s.localDB.Exec(`DELETE FROM tombstones WHERE table_name = ? AND record_key = ?`, table, key)
+	return err
+}
+
+// tombstoneReconcileResult captures, after the tombstone pass, the set of
+// keys that should be skipped by the subsequent upsert pass — these are
+// rows that have lost a delete-vs-edit race or that have already been
+// reconciled to "deleted on both sides".
+type tombstoneReconcileResult struct {
+	// killedKeys lists record keys the upsert pass MUST NOT re-insert.
+	killedKeys map[string]struct{}
+}
+
+func newTombstoneReconcileResult() tombstoneReconcileResult {
+	return tombstoneReconcileResult{killedKeys: make(map[string]struct{})}
+}
+
+func (r *tombstoneReconcileResult) kill(key string) {
+	r.killedKeys[key] = struct{}{}
+}
+
+func (r tombstoneReconcileResult) isKilled(key string) bool {
+	_, ok := r.killedKeys[key]
+	return ok
+}
+
+// reconcileTombstones runs the delete-vs-edit reconciliation for a single
+// logical table, given the current row state on both sides.
+//
+// rowUpdatedAt returns the updated_at string of a row identified by key on
+// one side, plus whether it exists. deleteRow performs a hard delete of the
+// row identified by key on the specified side (without writing a new
+// tombstone — the propagated tombstone covers that).
+//
+// Semantics:
+//   - If a tombstone on side A has deleted_at >= side B's row.updated_at,
+//     the delete wins: row is hard-deleted from B, tombstone is propagated
+//     to B, key is added to killedKeys so the upsert pass skips it.
+//   - If side B's row.updated_at > tombstone.deleted_at, the edit wins:
+//     the tombstone is dropped from A. The upsert pass will then push the
+//     newer row from B back to A.
+//   - If neither side has the row, the tombstone is simply propagated to
+//     the side that doesn't have it yet.
+func (s *SyncService) reconcileTombstones(
+	table string,
+	localTombstones, remoteTombstones map[string]string,
+	localRowUpdatedAt, remoteRowUpdatedAt func(key string) (string, bool),
+	deleteLocalRow, deleteRemoteRow func(key string) error,
+) (tombstoneReconcileResult, error) {
+	result := newTombstoneReconcileResult()
+
+	// Union of keys with a tombstone on either side.
+	keys := make(map[string]struct{}, len(localTombstones)+len(remoteTombstones))
+	for k := range localTombstones {
+		keys[k] = struct{}{}
+	}
+	for k := range remoteTombstones {
+		keys[k] = struct{}{}
+	}
+
+	for key := range keys {
+		localTs, hasLocalTs := localTombstones[key]
+		remoteTs, hasRemoteTs := remoteTombstones[key]
+
+		// Pick the most recent tombstone — that's the canonical delete time.
+		ts := localTs
+		if remoteTs > ts {
+			ts = remoteTs
+		}
+
+		remoteUpdated, remoteHas := remoteRowUpdatedAt(key)
+		localUpdated, localHas := localRowUpdatedAt(key)
+
+		// Edit-beats-delete: if either side has a row with updated_at >
+		// canonical tombstone deleted_at, the edit wins. Drop the
+		// tombstone(s) and let the upsert pass propagate the live row.
+		editBeatsDelete := (remoteHas && remoteUpdated > ts) || (localHas && localUpdated > ts)
+		if editBeatsDelete {
+			if hasLocalTs {
+				if err := s.deleteTombstoneFromLocal(table, key); err != nil {
+					return result, fmt.Errorf("drop losing local tombstone %s/%s: %w", table, key, err)
+				}
+			}
+			if hasRemoteTs {
+				if err := s.deleteTombstoneFromRemote(table, key); err != nil {
+					return result, fmt.Errorf("drop losing remote tombstone %s/%s: %w", table, key, err)
+				}
+			}
+			continue
+		}
+
+		// Delete wins. Hard-delete the row on whichever side still has it,
+		// then make sure both sides carry the tombstone with the canonical
+		// timestamp so future syncs don't reopen the race.
+		if remoteHas {
+			if err := deleteRemoteRow(key); err != nil {
+				return result, fmt.Errorf("apply tombstone to remote %s/%s: %w", table, key, err)
+			}
+		}
+		if localHas {
+			if err := deleteLocalRow(key); err != nil {
+				return result, fmt.Errorf("apply tombstone to local %s/%s: %w", table, key, err)
+			}
+		}
+		if !hasRemoteTs || remoteTs != ts {
+			if err := s.insertTombstoneToRemote(table, key, ts); err != nil {
+				return result, fmt.Errorf("propagate tombstone to remote %s/%s: %w", table, key, err)
+			}
+		}
+		if !hasLocalTs || localTs != ts {
+			if err := s.insertTombstoneToLocal(table, key, ts); err != nil {
+				return result, fmt.Errorf("propagate tombstone to local %s/%s: %w", table, key, err)
+			}
+		}
+		result.kill(key)
+	}
+
+	return result, nil
+}
+
 // InitialMigration performs a one-time migration from local to remote
 // This is used when setting up sync for the first time
 func (s *SyncService) InitialMigration() error {

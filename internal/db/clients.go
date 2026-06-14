@@ -193,25 +193,62 @@ func UpdateClient(client Client) error {
 	return nil
 }
 
-// DeleteClient permanently deletes a client
+// DeleteClient permanently deletes a client. Because client_rates has
+// ON DELETE CASCADE, every rate for this client is also removed; tombstones
+// are written for the client and each cascaded rate so sync propagates the
+// deletes instead of having the paired database re-insert them.
 func DeleteClient(id int) error {
-	query := `DELETE FROM clients WHERE id = ?`
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
 
-	result, err := db.Exec(query, id)
+	var name string
+	err = tx.QueryRow(`SELECT name FROM clients WHERE id = ?`, id).Scan(&name)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("client not found")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to look up client: %w", err)
+	}
+
+	rateRows, err := tx.Query(`SELECT effective_date FROM client_rates WHERE client_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("failed to query client rates: %w", err)
+	}
+	var rateDates []string
+	for rateRows.Next() {
+		var d string
+		if err := rateRows.Scan(&d); err != nil {
+			rateRows.Close()
+			return fmt.Errorf("failed to scan client rate: %w", err)
+		}
+		rateDates = append(rateDates, d)
+	}
+	rateRows.Close()
+
+	result, err := tx.Exec(`DELETE FROM clients WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete client: %w", err)
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to check rows affected: %w", err)
 	}
-
 	if rowsAffected == 0 {
 		return fmt.Errorf("client not found")
 	}
 
-	return nil
+	if err := WriteSqliteTombstone(tx, TombstoneTableClients, name); err != nil {
+		return err
+	}
+	for _, d := range rateDates {
+		if err := WriteSqliteTombstone(tx, TombstoneTableClientRates, TombstoneKeyClientRate(name, d)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // DeactivateClient sets a client to inactive instead of deleting
@@ -325,25 +362,46 @@ func UpdateClientRate(rate ClientRate) error {
 	return nil
 }
 
-// DeleteClientRate deletes a specific rate
+// DeleteClientRate deletes a specific rate. The rate's natural key
+// (client name + effective_date) is captured before the delete so a
+// tombstone keyed by that pair (the sync key) can be written.
 func DeleteClientRate(id int) error {
-	query := `DELETE FROM client_rates WHERE id = ?`
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
 
-	result, err := db.Exec(query, id)
+	var clientName, effectiveDate string
+	err = tx.QueryRow(`
+		SELECT c.name, r.effective_date
+		FROM client_rates r
+		JOIN clients c ON c.id = r.client_id
+		WHERE r.id = ?
+	`, id).Scan(&clientName, &effectiveDate)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("client rate not found")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to look up client rate: %w", err)
+	}
+
+	result, err := tx.Exec(`DELETE FROM client_rates WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete client rate: %w", err)
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to check rows affected: %w", err)
 	}
-
 	if rowsAffected == 0 {
 		return fmt.Errorf("client rate not found")
 	}
 
-	return nil
+	if err := WriteSqliteTombstone(tx, TombstoneTableClientRates, TombstoneKeyClientRate(clientName, effectiveDate)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Rate Lookup Functions

@@ -4,6 +4,8 @@ package sync
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -193,9 +195,48 @@ func (s *SyncService) syncClients(direction SyncDirection, stats *SyncStats) err
 		remoteMap[c.Name] = c
 	}
 
+	// Tombstone pass: reconcile deletes before the upsert pass so we don't
+	// re-insert a row that was just deleted on the other side.
+	localTs, err := s.getTombstonesFromDB(s.localDB, "sqlite", db.TombstoneTableClients)
+	if err != nil {
+		return fmt.Errorf("failed to get local tombstones: %w", err)
+	}
+	remoteTs, err := s.getTombstonesFromDB(s.remoteDB, "postgres", db.TombstoneTableClients)
+	if err != nil {
+		return fmt.Errorf("failed to get remote tombstones: %w", err)
+	}
+	rec, err := s.reconcileTombstones(
+		db.TombstoneTableClients,
+		localTs, remoteTs,
+		func(key string) (string, bool) {
+			c, ok := localMap[key]
+			return c.UpdatedAt, ok
+		},
+		func(key string) (string, bool) {
+			c, ok := remoteMap[key]
+			return c.UpdatedAt, ok
+		},
+		func(key string) error {
+			_, err := s.localDB.Exec(`DELETE FROM clients WHERE name = ?`, key)
+			delete(localMap, key)
+			return err
+		},
+		func(key string) error {
+			_, err := s.remoteDB.Exec(`DELETE FROM clients WHERE name = $1`, key)
+			delete(remoteMap, key)
+			return err
+		},
+	)
+	if err != nil {
+		return err
+	}
+
 	// Push local -> remote
 	if direction == SyncBidirectional || direction == SyncPushOnly {
 		for name, local := range localMap {
+			if rec.isKilled(name) {
+				continue
+			}
 			remote, exists := remoteMap[name]
 			if !exists {
 				// Insert new record to remote
@@ -216,6 +257,9 @@ func (s *SyncService) syncClients(direction SyncDirection, stats *SyncStats) err
 	// Pull remote -> local
 	if direction == SyncBidirectional || direction == SyncPullOnly {
 		for name, remote := range remoteMap {
+			if rec.isKilled(name) {
+				continue
+			}
 			local, exists := localMap[name]
 			if !exists {
 				// Insert new record to local
@@ -286,9 +330,67 @@ func (s *SyncService) syncClientRates(direction SyncDirection, stats *SyncStats)
 		remoteRateMap[key] = r
 	}
 
+	// Tombstone pass.
+	localTs, err := s.getTombstonesFromDB(s.localDB, "sqlite", db.TombstoneTableClientRates)
+	if err != nil {
+		return fmt.Errorf("failed to get local rate tombstones: %w", err)
+	}
+	remoteTs, err := s.getTombstonesFromDB(s.remoteDB, "postgres", db.TombstoneTableClientRates)
+	if err != nil {
+		return fmt.Errorf("failed to get remote rate tombstones: %w", err)
+	}
+	rec, err := s.reconcileTombstones(
+		db.TombstoneTableClientRates,
+		localTs, remoteTs,
+		func(key string) (string, bool) {
+			r, ok := localRateMap[key]
+			return r.UpdatedAt, ok
+		},
+		func(key string) (string, bool) {
+			r, ok := remoteRateMap[key]
+			return r.UpdatedAt, ok
+		},
+		func(key string) error {
+			// key = "clientName|effectiveDate"; resolve clientId via the
+			// local client map and delete by (client_id, effective_date).
+			name, date, ok := splitRateKey(key)
+			if !ok {
+				return nil
+			}
+			cid, ok := localClientMap[name]
+			if !ok {
+				delete(localRateMap, key)
+				return nil
+			}
+			_, err := s.localDB.Exec(`DELETE FROM client_rates WHERE client_id = ? AND effective_date = ?`, cid, date)
+			delete(localRateMap, key)
+			return err
+		},
+		func(key string) error {
+			name, date, ok := splitRateKey(key)
+			if !ok {
+				return nil
+			}
+			cid, ok := remoteClientMap[name]
+			if !ok {
+				delete(remoteRateMap, key)
+				return nil
+			}
+			_, err := s.remoteDB.Exec(`DELETE FROM client_rates WHERE client_id = $1 AND effective_date = $2`, cid, date)
+			delete(remoteRateMap, key)
+			return err
+		},
+	)
+	if err != nil {
+		return err
+	}
+
 	// Push local -> remote
 	if direction == SyncBidirectional || direction == SyncPushOnly {
 		for key, local := range localRateMap {
+			if rec.isKilled(key) {
+				continue
+			}
 			clientName := localIdToName[local.ClientId]
 			remoteClientId, ok := remoteClientMap[clientName]
 			if !ok {
@@ -313,6 +415,9 @@ func (s *SyncService) syncClientRates(direction SyncDirection, stats *SyncStats)
 	// Pull remote -> local
 	if direction == SyncBidirectional || direction == SyncPullOnly {
 		for key, remote := range remoteRateMap {
+			if rec.isKilled(key) {
+				continue
+			}
 			clientName := remoteIdToName[remote.ClientId]
 			localClientId, ok := localClientMap[clientName]
 			if !ok {
@@ -335,6 +440,43 @@ func (s *SyncService) syncClientRates(direction SyncDirection, stats *SyncStats)
 	}
 
 	return nil
+}
+
+// splitRateKey splits a "clientName|effectiveDate" key back into its parts.
+// Returns ok=false when the key is malformed (shouldn't happen given the
+// data layer is the only thing writing these).
+func splitRateKey(key string) (name, date string, ok bool) {
+	i := strings.Index(key, "|")
+	if i < 0 {
+		return "", "", false
+	}
+	return key[:i], key[i+1:], true
+}
+
+// splitTrainingKey splits a "date|trainingName" key back into its parts.
+func splitTrainingKey(key string) (date, name string, ok bool) {
+	i := strings.Index(key, "|")
+	if i < 0 {
+		return "", "", false
+	}
+	return key[:i], key[i+1:], true
+}
+
+// parseBufferKey parses a "YYYY-MM" key back into year and month.
+func parseBufferKey(key string) (year, month int, ok bool) {
+	i := strings.Index(key, "-")
+	if i < 0 {
+		return 0, 0, false
+	}
+	y, err := strconv.Atoi(key[:i])
+	if err != nil {
+		return 0, 0, false
+	}
+	m, err := strconv.Atoi(key[i+1:])
+	if err != nil {
+		return 0, 0, false
+	}
+	return y, m, true
 }
 
 // syncTimesheet synchronizes the timesheet table
@@ -360,9 +502,47 @@ func (s *SyncService) syncTimesheet(direction SyncDirection, stats *SyncStats) e
 		remoteMap[e.Date] = e
 	}
 
+	// Tombstone pass.
+	localTs, err := s.getTombstonesFromDB(s.localDB, "sqlite", db.TombstoneTableTimesheet)
+	if err != nil {
+		return fmt.Errorf("failed to get local timesheet tombstones: %w", err)
+	}
+	remoteTs, err := s.getTombstonesFromDB(s.remoteDB, "postgres", db.TombstoneTableTimesheet)
+	if err != nil {
+		return fmt.Errorf("failed to get remote timesheet tombstones: %w", err)
+	}
+	rec, err := s.reconcileTombstones(
+		db.TombstoneTableTimesheet,
+		localTs, remoteTs,
+		func(key string) (string, bool) {
+			e, ok := localMap[key]
+			return e.UpdatedAt, ok
+		},
+		func(key string) (string, bool) {
+			e, ok := remoteMap[key]
+			return e.UpdatedAt, ok
+		},
+		func(key string) error {
+			_, err := s.localDB.Exec(`DELETE FROM timesheet WHERE date = ?`, key)
+			delete(localMap, key)
+			return err
+		},
+		func(key string) error {
+			_, err := s.remoteDB.Exec(`DELETE FROM timesheet WHERE date = $1`, key)
+			delete(remoteMap, key)
+			return err
+		},
+	)
+	if err != nil {
+		return err
+	}
+
 	// Push local -> remote
 	if direction == SyncBidirectional || direction == SyncPushOnly {
 		for date, local := range localMap {
+			if rec.isKilled(date) {
+				continue
+			}
 			remote, exists := remoteMap[date]
 			if !exists {
 				if err := s.insertTimesheetToRemote(local); err != nil {
@@ -381,6 +561,9 @@ func (s *SyncService) syncTimesheet(direction SyncDirection, stats *SyncStats) e
 	// Pull remote -> local
 	if direction == SyncBidirectional || direction == SyncPullOnly {
 		for date, remote := range remoteMap {
+			if rec.isKilled(date) {
+				continue
+			}
 			local, exists := localMap[date]
 			if !exists {
 				if err := s.insertTimesheetToLocal(remote); err != nil {
@@ -424,9 +607,55 @@ func (s *SyncService) syncTrainingBudget(direction SyncDirection, stats *SyncSta
 		remoteMap[key] = e
 	}
 
+	// Tombstone pass.
+	localTs, err := s.getTombstonesFromDB(s.localDB, "sqlite", db.TombstoneTableTrainingBudget)
+	if err != nil {
+		return fmt.Errorf("failed to get local training tombstones: %w", err)
+	}
+	remoteTs, err := s.getTombstonesFromDB(s.remoteDB, "postgres", db.TombstoneTableTrainingBudget)
+	if err != nil {
+		return fmt.Errorf("failed to get remote training tombstones: %w", err)
+	}
+	rec, err := s.reconcileTombstones(
+		db.TombstoneTableTrainingBudget,
+		localTs, remoteTs,
+		func(key string) (string, bool) {
+			e, ok := localMap[key]
+			return e.UpdatedAt, ok
+		},
+		func(key string) (string, bool) {
+			e, ok := remoteMap[key]
+			return e.UpdatedAt, ok
+		},
+		func(key string) error {
+			date, name, ok := splitTrainingKey(key)
+			if !ok {
+				return nil
+			}
+			_, err := s.localDB.Exec(`DELETE FROM training_budget WHERE date = ? AND training_name = ?`, date, name)
+			delete(localMap, key)
+			return err
+		},
+		func(key string) error {
+			date, name, ok := splitTrainingKey(key)
+			if !ok {
+				return nil
+			}
+			_, err := s.remoteDB.Exec(`DELETE FROM training_budget WHERE date = $1 AND training_name = $2`, date, name)
+			delete(remoteMap, key)
+			return err
+		},
+	)
+	if err != nil {
+		return err
+	}
+
 	// Push local -> remote
 	if direction == SyncBidirectional || direction == SyncPushOnly {
 		for key, local := range localMap {
+			if rec.isKilled(key) {
+				continue
+			}
 			remote, exists := remoteMap[key]
 			if !exists {
 				if err := s.insertTrainingBudgetToRemote(local); err != nil {
@@ -445,6 +674,9 @@ func (s *SyncService) syncTrainingBudget(direction SyncDirection, stats *SyncSta
 	// Pull remote -> local
 	if direction == SyncBidirectional || direction == SyncPullOnly {
 		for key, remote := range remoteMap {
+			if rec.isKilled(key) {
+				continue
+			}
 			local, exists := localMap[key]
 			if !exists {
 				if err := s.insertTrainingBudgetToLocal(remote); err != nil {
@@ -486,8 +718,63 @@ func (s *SyncService) syncBufferHours(direction SyncDirection, stats *SyncStats)
 		remoteMap[key{e.Year, e.Month}] = e
 	}
 
+	// Tombstone pass. Keys are encoded as "YYYY-MM" strings; we parse them
+	// back to the (year, month) struct keys our maps use.
+	localTs, err := s.getTombstonesFromDB(s.localDB, "sqlite", db.TombstoneTableBufferHours)
+	if err != nil {
+		return fmt.Errorf("failed to get local buffer tombstones: %w", err)
+	}
+	remoteTs, err := s.getTombstonesFromDB(s.remoteDB, "postgres", db.TombstoneTableBufferHours)
+	if err != nil {
+		return fmt.Errorf("failed to get remote buffer tombstones: %w", err)
+	}
+	rec, err := s.reconcileTombstones(
+		db.TombstoneTableBufferHours,
+		localTs, remoteTs,
+		func(tk string) (string, bool) {
+			y, m, ok := parseBufferKey(tk)
+			if !ok {
+				return "", false
+			}
+			e, found := localMap[key{y, m}]
+			return e.UpdatedAt, found
+		},
+		func(tk string) (string, bool) {
+			y, m, ok := parseBufferKey(tk)
+			if !ok {
+				return "", false
+			}
+			e, found := remoteMap[key{y, m}]
+			return e.UpdatedAt, found
+		},
+		func(tk string) error {
+			y, m, ok := parseBufferKey(tk)
+			if !ok {
+				return nil
+			}
+			_, err := s.localDB.Exec(`DELETE FROM buffer_hours WHERE year = ? AND month = ?`, y, m)
+			delete(localMap, key{y, m})
+			return err
+		},
+		func(tk string) error {
+			y, m, ok := parseBufferKey(tk)
+			if !ok {
+				return nil
+			}
+			_, err := s.remoteDB.Exec(`DELETE FROM buffer_hours WHERE year = $1 AND month = $2`, y, m)
+			delete(remoteMap, key{y, m})
+			return err
+		},
+	)
+	if err != nil {
+		return err
+	}
+
 	if direction == SyncBidirectional || direction == SyncPushOnly {
 		for k, local := range localMap {
+			if rec.isKilled(db.TombstoneKeyBufferHours(k.year, k.month)) {
+				continue
+			}
 			remote, exists := remoteMap[k]
 			if !exists {
 				if err := s.insertBufferHoursToRemote(local); err != nil {
@@ -505,6 +792,9 @@ func (s *SyncService) syncBufferHours(direction SyncDirection, stats *SyncStats)
 
 	if direction == SyncBidirectional || direction == SyncPullOnly {
 		for k, remote := range remoteMap {
+			if rec.isKilled(db.TombstoneKeyBufferHours(k.year, k.month)) {
+				continue
+			}
 			local, exists := localMap[k]
 			if !exists {
 				if err := s.insertBufferHoursToLocal(remote); err != nil {
@@ -546,9 +836,63 @@ func (s *SyncService) syncVacationCarryover(direction SyncDirection, stats *Sync
 		remoteMap[e.Year] = e
 	}
 
+	// Tombstone pass. Keys are the year encoded as a decimal string.
+	localTs, err := s.getTombstonesFromDB(s.localDB, "sqlite", db.TombstoneTableVacationCarryover)
+	if err != nil {
+		return fmt.Errorf("failed to get local vacation tombstones: %w", err)
+	}
+	remoteTs, err := s.getTombstonesFromDB(s.remoteDB, "postgres", db.TombstoneTableVacationCarryover)
+	if err != nil {
+		return fmt.Errorf("failed to get remote vacation tombstones: %w", err)
+	}
+	rec, err := s.reconcileTombstones(
+		db.TombstoneTableVacationCarryover,
+		localTs, remoteTs,
+		func(tk string) (string, bool) {
+			y, err := strconv.Atoi(tk)
+			if err != nil {
+				return "", false
+			}
+			e, ok := localMap[y]
+			return e.UpdatedAt, ok
+		},
+		func(tk string) (string, bool) {
+			y, err := strconv.Atoi(tk)
+			if err != nil {
+				return "", false
+			}
+			e, ok := remoteMap[y]
+			return e.UpdatedAt, ok
+		},
+		func(tk string) error {
+			y, err := strconv.Atoi(tk)
+			if err != nil {
+				return nil
+			}
+			_, err = s.localDB.Exec(`DELETE FROM vacation_carryover WHERE year = ?`, y)
+			delete(localMap, y)
+			return err
+		},
+		func(tk string) error {
+			y, err := strconv.Atoi(tk)
+			if err != nil {
+				return nil
+			}
+			_, err = s.remoteDB.Exec(`DELETE FROM vacation_carryover WHERE year = $1`, y)
+			delete(remoteMap, y)
+			return err
+		},
+	)
+	if err != nil {
+		return err
+	}
+
 	// Push local -> remote
 	if direction == SyncBidirectional || direction == SyncPushOnly {
 		for year, local := range localMap {
+			if rec.isKilled(db.TombstoneKeyVacationCarryover(year)) {
+				continue
+			}
 			remote, exists := remoteMap[year]
 			if !exists {
 				if err := s.insertVacationCarryoverToRemote(local); err != nil {
@@ -567,6 +911,9 @@ func (s *SyncService) syncVacationCarryover(direction SyncDirection, stats *Sync
 	// Pull remote -> local
 	if direction == SyncBidirectional || direction == SyncPullOnly {
 		for year, remote := range remoteMap {
+			if rec.isKilled(db.TombstoneKeyVacationCarryover(year)) {
+				continue
+			}
 			local, exists := localMap[year]
 			if !exists {
 				if err := s.insertVacationCarryoverToLocal(remote); err != nil {

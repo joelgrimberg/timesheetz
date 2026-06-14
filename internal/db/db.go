@@ -174,6 +174,32 @@ func InitializeDatabase(dbPath string) error {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 
+	if err := ApplySQLiteSchema(db); err != nil {
+		return err
+	}
+
+	// Set database permissions AFTER the file is created (skip for in-memory databases)
+	if dbPath != ":memory:" {
+		// Check if file exists before trying to chmod
+		if _, err := os.Stat(dbPath); err == nil {
+			if err := os.Chmod(dbPath, 0644); err != nil {
+				// Log warning but don't fail - permissions might not be critical
+				logging.Log("Warning: failed to set database permissions: %v", err)
+			}
+		}
+	}
+
+	logging.Log("Database initialized successfully 🍺")
+	return nil
+}
+
+// ApplySQLiteSchema creates every table and index timesheetz expects on the
+// given SQLite connection and runs the additive migrations that earlier
+// builds layered on with ALTER TABLE. Safe to call on a fresh database or
+// one that's been around for a while. Useful for tests that need a second
+// isolated connection (e.g., the sync end-to-end tests treating one DB as
+// the "remote" Postgres-like side).
+func ApplySQLiteSchema(conn *sql.DB) error {
 	// Execute each statement separately to ensure all tables are created
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS timesheet (
@@ -239,16 +265,27 @@ func InitializeDatabase(dbPath string) error {
 			UNIQUE(year, month)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_buffer_hours_year ON buffer_hours(year);`,
+		// tombstones records every delete so bidirectional sync can propagate
+		// removals instead of re-inserting whichever side still has the row.
+		// record_key is the natural sync key for the table_name (date, name,
+		// year, "year-month", "name|effective_date", "date|training_name").
+		`CREATE TABLE IF NOT EXISTS tombstones (
+			table_name TEXT NOT NULL,
+			record_key TEXT NOT NULL,
+			deleted_at TEXT NOT NULL,
+			PRIMARY KEY (table_name, record_key)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_tombstones_table ON tombstones(table_name);`,
 	}
 
 	for _, stmt := range stmts {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := conn.Exec(stmt); err != nil {
 			return fmt.Errorf("failed to execute statement: %w\nSQL: %s", err, stmt)
 		}
 	}
 
 	// Try to add client_id column to timesheet (may fail if already exists, which is OK)
-	_, err = db.Exec(`ALTER TABLE timesheet ADD COLUMN client_id INTEGER REFERENCES clients(id);`)
+	_, err := conn.Exec(`ALTER TABLE timesheet ADD COLUMN client_id INTEGER REFERENCES clients(id);`)
 	if err != nil {
 		// Log but don't fail - column probably already exists
 		if !strings.Contains(err.Error(), "duplicate column name") {
@@ -271,33 +308,21 @@ func InitializeDatabase(dbPath string) error {
 
 	for _, m := range syncMigrations {
 		// SQLite doesn't allow DEFAULT CURRENT_TIMESTAMP in ALTER TABLE, so we use NULL default
-		sql := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s TEXT;`, m.table, m.column)
-		_, err = db.Exec(sql)
+		sqlStmt := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s TEXT;`, m.table, m.column)
+		_, err = conn.Exec(sqlStmt)
 		if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			logging.Log("Note: Could not add %s.%s column: %v", m.table, m.column, err)
 		}
 	}
 
 	// Set default values for existing rows that have NULL timestamps
-	_, _ = db.Exec(`UPDATE timesheet SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL;`)
-	_, _ = db.Exec(`UPDATE timesheet SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
-	_, _ = db.Exec(`UPDATE training_budget SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL;`)
-	_, _ = db.Exec(`UPDATE training_budget SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
-	_, _ = db.Exec(`UPDATE clients SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
-	_, _ = db.Exec(`UPDATE client_rates SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
+	_, _ = conn.Exec(`UPDATE timesheet SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL;`)
+	_, _ = conn.Exec(`UPDATE timesheet SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
+	_, _ = conn.Exec(`UPDATE training_budget SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL;`)
+	_, _ = conn.Exec(`UPDATE training_budget SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
+	_, _ = conn.Exec(`UPDATE clients SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
+	_, _ = conn.Exec(`UPDATE client_rates SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL;`)
 
-	// Set database permissions AFTER the file is created (skip for in-memory databases)
-	if dbPath != ":memory:" {
-		// Check if file exists before trying to chmod
-		if _, err := os.Stat(dbPath); err == nil {
-			if err := os.Chmod(dbPath, 0644); err != nil {
-				// Log warning but don't fail - permissions might not be critical
-				logging.Log("Warning: failed to set database permissions: %v", err)
-			}
-		}
-	}
-
-	logging.Log("Database initialized successfully 🍺")
 	return nil
 }
 
@@ -529,40 +554,58 @@ func UpdateTimesheetEntryById(id string, data map[string]any) error {
 	return nil
 }
 
-// DeleteTimesheetEntryByDate removes a timesheet entry by its date
+// DeleteTimesheetEntryByDate removes a timesheet entry by its date.
+// A tombstone is written for the same date so bidirectional sync can
+// propagate the delete instead of having the other DB re-insert the row.
 func DeleteTimesheetEntryByDate(date string) error {
-	// Use prepared statement to prevent SQL injection
-	stmt, err := db.Prepare("DELETE FROM timesheet WHERE date = ?")
+	tx, err := db.Begin()
 	if err != nil {
-		return fmt.Errorf("failed to prepare delete statement: %w", err)
+		return fmt.Errorf("failed to begin tx: %w", err)
 	}
-	defer stmt.Close()
+	defer tx.Rollback()
 
-	// Execute the statement
-	_, err = stmt.Exec(date)
+	res, err := tx.Exec(`DELETE FROM timesheet WHERE date = ?`, date)
 	if err != nil {
 		return fmt.Errorf("failed to delete record: %w", err)
 	}
-
-	return nil
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if affected > 0 {
+		if err := WriteSqliteTombstone(tx, TombstoneTableTimesheet, date); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
-// DeleteTimesheetEntry removes a timesheet entry by its ID
+// DeleteTimesheetEntry removes a timesheet entry by its ID. The row's date
+// is captured before the delete so a tombstone keyed by date (the sync key)
+// can be written.
 func DeleteTimesheetEntry(id string) error {
-	// Use prepared statement to prevent SQL injection
-	stmt, err := db.Prepare("DELETE FROM timesheet WHERE id = ?")
+	tx, err := db.Begin()
 	if err != nil {
-		return fmt.Errorf("failed to prepare delete statement: %w", err)
+		return fmt.Errorf("failed to begin tx: %w", err)
 	}
-	defer stmt.Close()
+	defer tx.Rollback()
 
-	// Execute the statement
-	_, err = stmt.Exec(id)
+	var date string
+	err = tx.QueryRow(`SELECT date FROM timesheet WHERE id = ?`, id).Scan(&date)
+	if err == sql.ErrNoRows {
+		return tx.Commit()
+	}
 	if err != nil {
+		return fmt.Errorf("failed to look up entry: %w", err)
+	}
+
+	if _, err := tx.Exec(`DELETE FROM timesheet WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("failed to delete record: %w", err)
 	}
-
-	return nil
+	if err := WriteSqliteTombstone(tx, TombstoneTableTimesheet, date); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func Ping() error {
@@ -670,13 +713,30 @@ func SetVacationCarryover(carryover VacationCarryover) error {
 	return nil
 }
 
-// DeleteVacationCarryover removes carryover for a year
+// DeleteVacationCarryover removes carryover for a year.
+// A tombstone keyed by year string is written so sync can propagate the
+// delete to the paired database.
 func DeleteVacationCarryover(year int) error {
-	_, err := db.Exec(`DELETE FROM vacation_carryover WHERE year = ?`, year)
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`DELETE FROM vacation_carryover WHERE year = ?`, year)
 	if err != nil {
 		return fmt.Errorf("failed to delete vacation carryover: %w", err)
 	}
-	return nil
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if affected > 0 {
+		if err := WriteSqliteTombstone(tx, TombstoneTableVacationCarryover, TombstoneKeyVacationCarryover(year)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // calculateAutoCarryover computes the carryover for a year by looking at
@@ -830,11 +890,28 @@ func UpsertBufferEntry(entry BufferEntry) error {
 	return nil
 }
 
-// DeleteBufferEntry removes the buffer entry for (year, month)
+// DeleteBufferEntry removes the buffer entry for (year, month).
+// A tombstone keyed by "YYYY-MM" is written so sync can propagate the
+// delete to the paired database.
 func DeleteBufferEntry(year, month int) error {
-	_, err := db.Exec(`DELETE FROM buffer_hours WHERE year = ? AND month = ?`, year, month)
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`DELETE FROM buffer_hours WHERE year = ? AND month = ?`, year, month)
 	if err != nil {
 		return fmt.Errorf("failed to delete buffer entry: %w", err)
 	}
-	return nil
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if affected > 0 {
+		if err := WriteSqliteTombstone(tx, TombstoneTableBufferHours, TombstoneKeyBufferHours(year, month)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
