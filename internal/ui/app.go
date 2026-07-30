@@ -400,8 +400,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					tsSelected = rows[c][0]
 				}
 			}
+			tsYanked := m.TimesheetModel.yankedEntry
 			m.OverviewModel = InitialOverviewModel()
 			m.TimesheetModel = InitialTimesheetModelForMonth(tsYear, tsMonth, tsSelected)
+			m.TimesheetModel.yankedEntry = tsYanked
 			m.TrainingModel = InitialTrainingModel()
 			m.TrainingBudgetModel = InitialTrainingBudgetModel()
 			m.VacationModel = InitialVacationModel()
