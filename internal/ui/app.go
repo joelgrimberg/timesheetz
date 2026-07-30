@@ -230,6 +230,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.VacationModel = InitialVacationModel()
 				} else if m.ActiveMode == BufferMode && prevMode != BufferMode {
 					m.BufferModel = InitialBufferModel()
+				} else if m.ActiveMode == TrainingBudgetMode && prevMode != TrainingBudgetMode {
+					m.TrainingBudgetModel = InitialTrainingBudgetModel()
+				} else if m.ActiveMode == ClientsMode && prevMode != ClientsMode {
+					m.ClientsModel = InitialClientsModel()
+				} else if m.ActiveMode == EarningsMode && prevMode != EarningsMode {
+					m.EarningsModel = InitialEarningsModel()
 				} else if m.ActiveMode == ConfigMode && prevMode != ConfigMode {
 					m.ConfigModel = InitialConfigModel()
 					return m, m.ConfigModel.Init()
@@ -271,6 +277,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.VacationModel = InitialVacationModel()
 				} else if m.ActiveMode == BufferMode && prevMode != BufferMode {
 					m.BufferModel = InitialBufferModel()
+				} else if m.ActiveMode == TrainingBudgetMode && prevMode != TrainingBudgetMode {
+					m.TrainingBudgetModel = InitialTrainingBudgetModel()
+				} else if m.ActiveMode == ClientsMode && prevMode != ClientsMode {
+					m.ClientsModel = InitialClientsModel()
+				} else if m.ActiveMode == EarningsMode && prevMode != EarningsMode {
+					m.EarningsModel = InitialEarningsModel()
 				} else if m.ActiveMode == ConfigMode && prevMode != ConfigMode {
 					m.ConfigModel = InitialConfigModel()
 					return m, m.ConfigModel.Init()
