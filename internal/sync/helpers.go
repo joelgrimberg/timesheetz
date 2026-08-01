@@ -108,12 +108,18 @@ func (s *SyncService) updateClientInRemote(c clientRecord, remoteId int) error {
 func (s *SyncService) insertClientToLocal(c clientRecord) error {
 	query := `INSERT INTO clients (name, created_at, updated_at, is_active) VALUES (?, ?, ?, ?)`
 	_, err := s.localDB.Exec(query, c.Name, c.CreatedAt, c.UpdatedAt, c.IsActive)
+	if err == nil {
+		db.InvalidateRateCache()
+	}
 	return err
 }
 
 func (s *SyncService) updateClientInLocal(c clientRecord, localId int) error {
 	query := `UPDATE clients SET name = ?, updated_at = ?, is_active = ? WHERE id = ?`
 	_, err := s.localDB.Exec(query, c.Name, c.UpdatedAt, c.IsActive, localId)
+	if err == nil {
+		db.InvalidateRateCache()
+	}
 	return err
 }
 
@@ -153,12 +159,18 @@ func (s *SyncService) updateClientRateInRemote(r clientRateRecord, remoteId int,
 func (s *SyncService) insertClientRateToLocal(r clientRateRecord, localClientId int) error {
 	query := `INSERT INTO client_rates (client_id, hourly_rate, effective_date, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
 	_, err := s.localDB.Exec(query, localClientId, r.HourlyRate, r.EffectiveDate, r.Notes, r.CreatedAt, r.UpdatedAt)
+	if err == nil {
+		db.InvalidateRateCache()
+	}
 	return err
 }
 
 func (s *SyncService) updateClientRateInLocal(r clientRateRecord, localId int, localClientId int) error {
 	query := `UPDATE client_rates SET client_id = ?, hourly_rate = ?, effective_date = ?, notes = ?, updated_at = ? WHERE id = ?`
 	_, err := s.localDB.Exec(query, localClientId, r.HourlyRate, r.EffectiveDate, r.Notes, r.UpdatedAt, localId)
+	if err == nil {
+		db.InvalidateRateCache()
+	}
 	return err
 }
 

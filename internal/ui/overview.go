@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // OverviewKeyMap defines the keybindings for the overview view
@@ -208,29 +207,21 @@ func (m OverviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m OverviewModel) View() string {
 	var helpView string
 	if m.showHelp {
-		helpView = "\n" + lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Render("Navigation:\n  ←/→, h/l: Change year\n  ?: Toggle help\n  q: Quit\n\nTabs:\n  <: Previous tab\n  >: Next tab")
+		helpView = "\n" + overviewDimStyle.Render("Navigation:\n  ←/→, h/l: Change year\n  ?: Toggle help\n  q: Quit\n\nTabs:\n  <: Previous tab\n  >: Next tab")
 	} else {
-		helpView = "\n" + lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Render("←/→: Change year • ?: Help • q: Quit • </>: Tabs")
+		helpView = "\n" + overviewDimStyle.Render("←/→: Change year • ?: Help • q: Quit • </>: Tabs")
 	}
 
 	// Create the overview content
-	content := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
-		Padding(2, 4).
-		Render(
-			fmt.Sprintf(
-				"%s\n%s\n\n%s\n%s",
-				lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Training Hours Remaining:"),
-				lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("  %d hours", m.trainingHoursLeft)),
-				lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Vacation Hours Remaining:"),
-				lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).Render(fmt.Sprintf("  %d hours", m.vacationHoursLeft)),
-			),
-		)
+	content := overviewContentStyle.Render(
+		fmt.Sprintf(
+			"%s\n%s\n\n%s\n%s",
+			overviewLabelStyle.Render("Training Hours Remaining:"),
+			overviewValueStyle.Render(fmt.Sprintf("  %d hours", m.trainingHoursLeft)),
+			overviewLabelStyle.Render("Vacation Hours Remaining:"),
+			overviewValueStyle.Render(fmt.Sprintf("  %d hours", m.vacationHoursLeft)),
+		),
+	)
 
 	return fmt.Sprintf(
 		"%s\n%s%s",

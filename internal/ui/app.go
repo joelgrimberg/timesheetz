@@ -156,6 +156,44 @@ func (m AppModel) Init() tea.Cmd {
 	return tea.Batch(updateCmd, syncInitCmd, modeCmd)
 }
 
+// refreshActiveModelAfterSync rebuilds only the model for the currently
+// active tab. Other tabs are refreshed lazily on next tab switch by the
+// existing < / > handlers, which avoids doing 7 rebuilds per sync tick
+// when the user is only looking at one tab. Timesheet preserves cursor
+// and yanked-entry state so the sync doesn't jerk the user's selection.
+func (m *AppModel) refreshActiveModelAfterSync() {
+	switch m.ActiveMode {
+	case TimesheetMode:
+		tsYear, tsMonth := m.TimesheetModel.currentYear, m.TimesheetModel.currentMonth
+		tsSelected := ""
+		if rows := m.TimesheetModel.table.Rows(); len(rows) > 0 {
+			if c := m.TimesheetModel.table.Cursor(); c >= 0 && c < len(rows) {
+				tsSelected = rows[c][0]
+			}
+		}
+		tsYanked := m.TimesheetModel.yankedEntry
+		m.TimesheetModel = InitialTimesheetModelForMonth(tsYear, tsMonth, tsSelected)
+		m.TimesheetModel.yankedEntry = tsYanked
+	case OverviewMode:
+		m.OverviewModel = InitialOverviewModel()
+	case TrainingMode:
+		m.TrainingModel = InitialTrainingModel()
+	case TrainingBudgetMode:
+		m.TrainingBudgetModel = InitialTrainingBudgetModel()
+	case VacationMode:
+		m.VacationModel = InitialVacationModel()
+	case BufferMode:
+		m.BufferModel = InitialBufferModel()
+	case ClientsMode:
+		m.ClientsModel = InitialClientsModel()
+	case EarningsMode:
+		m.EarningsModel = InitialEarningsModel()
+	}
+	// Other modes (FormMode, TrainingBudgetFormMode, ClientFormMode,
+	// ClientRatesModalMode, BufferFormMode, ConfigMode) don't display DB
+	// data that sync touches, so no rebuild is needed.
+}
+
 // ReturnToTimesheetMsg is sent when returning to the timesheet view
 type ReturnToTimesheetMsg struct {
 	Date string // Optional: the date to select when returning
@@ -401,27 +439,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncStatus = "Sync error"
 		} else {
 			m.syncStatus = FormatSyncStatus(m.lastSyncTime, false, false)
-			// Refresh views to show any synced data. The timesheet rebuilds
-			// from the user's current month/cursor so a sync never yanks the
-			// selection back to today (or back to the current month if they
-			// were browsing history).
-			tsYear, tsMonth := m.TimesheetModel.currentYear, m.TimesheetModel.currentMonth
-			tsSelected := ""
-			if rows := m.TimesheetModel.table.Rows(); len(rows) > 0 {
-				if c := m.TimesheetModel.table.Cursor(); c >= 0 && c < len(rows) {
-					tsSelected = rows[c][0]
-				}
-			}
-			tsYanked := m.TimesheetModel.yankedEntry
-			m.OverviewModel = InitialOverviewModel()
-			m.TimesheetModel = InitialTimesheetModelForMonth(tsYear, tsMonth, tsSelected)
-			m.TimesheetModel.yankedEntry = tsYanked
-			m.TrainingModel = InitialTrainingModel()
-			m.TrainingBudgetModel = InitialTrainingBudgetModel()
-			m.VacationModel = InitialVacationModel()
-			m.BufferModel = InitialBufferModel()
-			m.ClientsModel = InitialClientsModel()
-			m.EarningsModel = InitialEarningsModel()
+			// Only rebuild the tab the user is looking at. Inactive tabs
+			// already rebuild on next tab switch (see < / > handlers), so
+			// eagerly rebuilding all of them here duplicates work every
+			// syncInterval (15s) — a real cost when Postgres is remote.
+			m.refreshActiveModelAfterSync()
 		}
 		return m, nil
 	}
@@ -864,13 +886,13 @@ func (m AppModel) View() string {
 		var syncStyle lipgloss.Style
 		switch {
 		case hasError:
-			syncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true) // red
+			syncStyle = syncStatusErrorStyle
 		case isSyncing:
-			syncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // amber
+			syncStyle = syncStatusSyncingStyle
 		case !m.lastSyncTime.IsZero() && time.Since(m.lastSyncTime) < 15*time.Second:
-			syncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("78")).Bold(true) // bright green
+			syncStyle = syncStatusRecentStyle
 		default:
-			syncStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // dim
+			syncStyle = syncStatusOldStyle
 		}
 		dbType := config.GetDBType()
 		dbLabel := "SQLite"

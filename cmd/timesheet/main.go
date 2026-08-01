@@ -16,7 +16,6 @@ import (
 	"timesheet/internal/version"
 
 	tea "github.com/charmbracelet/bubbletea"
-	_ "github.com/go-sql-driver/mysql"
 )
 
 // Command line flags
@@ -95,6 +94,9 @@ func setupFlags() flags {
 func main() {
 	// Setup and parse flags
 	flags := setupFlags()
+
+	// Start pprof if TIMESHEETZ_PPROF=1 (loopback-only, no-op otherwise).
+	maybeStartPprof()
 
 	// Show help and exit if --help is used
 	if flags.help {

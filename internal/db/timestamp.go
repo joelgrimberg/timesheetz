@@ -15,4 +15,16 @@ func NowTimestamp() string {
 	return nowFunc().UTC().Format(timestampLayout)
 }
 
+// ParseTimestamp parses a timestamp string written with timestampLayout
+// back into a time.Time. Used by sync to apply cursor overlap windows.
+func ParseTimestamp(s string) (time.Time, error) {
+	return time.Parse(timestampLayout, s)
+}
+
+// FormatTimestamp formats a time.Time back into the canonical string
+// form used by every INSERT/UPDATE.
+func FormatTimestamp(t time.Time) string {
+	return t.UTC().Format(timestampLayout)
+}
+
 var nowFunc = time.Now

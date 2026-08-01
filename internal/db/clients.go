@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -164,6 +166,7 @@ func AddClient(client Client) (int, error) {
 		return 0, fmt.Errorf("failed to get last insert id: %w", err)
 	}
 
+	InvalidateRateCache()
 	return int(id), nil
 }
 
@@ -190,6 +193,7 @@ func UpdateClient(client Client) error {
 		return fmt.Errorf("client not found")
 	}
 
+	InvalidateRateCache()
 	return nil
 }
 
@@ -248,7 +252,11 @@ func DeleteClient(id int) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	InvalidateRateCache()
+	return nil
 }
 
 // DeactivateClient sets a client to inactive instead of deleting
@@ -269,6 +277,7 @@ func DeactivateClient(id int) error {
 		return fmt.Errorf("client not found")
 	}
 
+	InvalidateRateCache()
 	return nil
 }
 
@@ -336,6 +345,7 @@ func AddClientRate(rate ClientRate) error {
 		return fmt.Errorf("failed to add client rate: %w", err)
 	}
 
+	InvalidateRateCache()
 	return nil
 }
 
@@ -359,6 +369,7 @@ func UpdateClientRate(rate ClientRate) error {
 		return fmt.Errorf("client rate not found")
 	}
 
+	InvalidateRateCache()
 	return nil
 }
 
@@ -401,7 +412,11 @@ func DeleteClientRate(id int) error {
 	if err := WriteSqliteTombstone(tx, TombstoneTableClientRates, TombstoneKeyClientRate(clientName, effectiveDate)); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	InvalidateRateCache()
+	return nil
 }
 
 // Rate Lookup Functions
@@ -451,19 +466,71 @@ func GetClientRateByName(clientName string, date string) (float64, error) {
 
 // rateCache holds cached client and rate information for efficient lookups
 type rateCache struct {
-	clientsByName map[string]int              // clientName -> clientId
-	ratesByClient map[int][]ClientRate        // clientId -> sorted rates (newest first)
+	clientsByName map[string]int       // clientName -> clientId
+	ratesByClient map[int][]ClientRate // clientId -> sorted rates (newest first)
 }
 
-// buildRateCache creates a cache of all clients and their rates
-// This eliminates N+1 queries by loading all data upfront
+// rateCacheGen tracks the "generation" of client/rate data. Every mutation
+// (AddClient, UpdateClient, DeleteClient, AddClientRate, ...) bumps this
+// counter; the cache below is only trusted when its stored generation
+// matches the current one.
+//
+// Sync-side writes must also call InvalidateRateCache when they upsert
+// clients or rates directly against the DB (bypassing the AddX helpers).
+var (
+	rateCacheGen     atomic.Uint64
+	rateCacheMu      sync.Mutex
+	rateCacheSnap    atomic.Pointer[cachedRateSnapshot]
+)
+
+type cachedRateSnapshot struct {
+	cache *rateCache
+	gen   uint64
+}
+
+// InvalidateRateCache marks the current rate cache stale. The next
+// buildRateCache call rebuilds from the DB. Safe to call from any goroutine.
+func InvalidateRateCache() {
+	rateCacheGen.Add(1)
+}
+
+// buildRateCache returns a cached snapshot of all clients and their rates,
+// rebuilding from the DB only when the cache is stale (or on first call).
+//
+// The returned *rateCache is immutable once stored — safe to share
+// across goroutines without copying.
 func buildRateCache() (*rateCache, error) {
+	gen := rateCacheGen.Load()
+	if snap := rateCacheSnap.Load(); snap != nil && snap.gen == gen {
+		return snap.cache, nil
+	}
+
+	rateCacheMu.Lock()
+	defer rateCacheMu.Unlock()
+
+	// Re-check under the lock — another goroutine may have rebuilt
+	// while we were waiting.
+	gen = rateCacheGen.Load()
+	if snap := rateCacheSnap.Load(); snap != nil && snap.gen == gen {
+		return snap.cache, nil
+	}
+
+	cache, err := loadRateCache()
+	if err != nil {
+		return nil, err
+	}
+	rateCacheSnap.Store(&cachedRateSnapshot{cache: cache, gen: gen})
+	return cache, nil
+}
+
+// loadRateCache does the actual DB work. It's only ever called from
+// buildRateCache under rateCacheMu.
+func loadRateCache() (*rateCache, error) {
 	cache := &rateCache{
 		clientsByName: make(map[string]int),
 		ratesByClient: make(map[int][]ClientRate),
 	}
 
-	// Load all clients into cache
 	clients, err := GetAllClients()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get clients: %w", err)
@@ -472,7 +539,6 @@ func buildRateCache() (*rateCache, error) {
 		cache.clientsByName[client.Name] = client.Id
 	}
 
-	// Load all rates for all clients
 	query := `SELECT id, client_id, hourly_rate, effective_date, notes, created_at
 	          FROM client_rates
 	          ORDER BY client_id, effective_date DESC`

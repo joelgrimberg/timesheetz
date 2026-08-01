@@ -738,20 +738,17 @@ func (m TimesheetModel) View() string {
 	expected := workschedule.ExpectedHoursForMonth(m.currentYear, m.currentMonth, config.GetWorkSchedule())
 	delta := m.columnTotals["totalHours"] - expected
 
-	expectedLabel := lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Render("Expected:")
-	expectedValue := lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("%dh", expected))
+	expectedLabel := expectedLabelStyle.Render("Expected:")
+	expectedValue := expectedValueStyle.Render(fmt.Sprintf("%dh", expected))
 
 	var deltaStr string
 	switch {
 	case delta < 0:
-		deltaStr = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196")).
-			Render(fmt.Sprintf("Δ %dh", delta)) // negative sign comes from the number
+		deltaStr = deltaBehindStyle.Render(fmt.Sprintf("Δ %dh", delta)) // negative sign comes from the number
 	case delta > 0:
-		deltaStr = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("220")).
-			Render(fmt.Sprintf("Δ +%dh", delta))
+		deltaStr = deltaAheadStyle.Render(fmt.Sprintf("Δ +%dh", delta))
 	default:
-		deltaStr = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("78")).
-			Render("Δ 0h ✓")
+		deltaStr = deltaOnTargetStyle.Render("Δ 0h ✓")
 	}
 
 	s += fmt.Sprintf("%s %s    %s\n\n", expectedLabel, expectedValue, deltaStr)

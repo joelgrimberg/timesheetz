@@ -106,6 +106,16 @@ func InitializePostgresDatabase() error {
 			PRIMARY KEY (table_name, record_key)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_tombstones_table ON tombstones(table_name)`,
+		// sync_state stores incremental-sync cursors. One row per synced
+		// table; each row records how far the sync loop has processed
+		// rows on the local and remote sides so subsequent cycles can
+		// skip rows that haven't changed.
+		`CREATE TABLE IF NOT EXISTS sync_state (
+			table_name TEXT PRIMARY KEY,
+			local_cursor TEXT NOT NULL DEFAULT '',
+			remote_cursor TEXT NOT NULL DEFAULT '',
+			updated_at TEXT NOT NULL
+		)`,
 	}
 
 	for _, stmt := range stmts {

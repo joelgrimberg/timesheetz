@@ -31,6 +31,7 @@ var configPathOverride string
 // Pass an empty string to revert to the default path.
 func SetConfigPathOverride(path string) {
 	configPathOverride = path
+	invalidateConfigCache()
 }
 
 // TrainingHours represents the training hours configuration
@@ -144,6 +145,7 @@ func SetRuntimePort(port int) {
 		fmt.Printf("Runtime API port set to: %v\n", port)
 	}
 	logging.Log("Runtime API port set to: %v", port)
+	invalidateConfigCache()
 }
 
 // GetAPIPort returns the API port to use
@@ -153,23 +155,21 @@ func GetAPIPort() int {
 		return runtimePort
 	}
 
-	// Fall back to config file
-	configPath := GetConfigPath()
-	configFile, err := os.ReadFile(configPath)
+	// Fall back to (cached) config file
+	config, err := readCachedConfig()
 	if err != nil {
 		// In non-interactive mode (like Docker), default to 8080 instead of exiting
 		if os.Getenv("TIMESHEETZ_NO_TUI") == "true" || !term.IsTerminal(int(os.Stdin.Fd())) {
 			logging.Log("Warning: Could not read config file, defaulting to port 8080")
 			return 8080
 		}
-		fmt.Println("Error: No port specified. Please either:")
-		fmt.Println("  1. Add 'apiPort' to your config.json file")
-		fmt.Println("  2. Run the program with --port flag")
-		fmt.Println("  3. Run the program with --no-tui flag if you don't need the API server")
-		os.Exit(1)
-	}
-	var config Config
-	if err := json.Unmarshal(configFile, &config); err != nil {
+		if _, statErr := os.Stat(GetConfigPath()); statErr != nil {
+			fmt.Println("Error: No port specified. Please either:")
+			fmt.Println("  1. Add 'apiPort' to your config.json file")
+			fmt.Println("  2. Run the program with --port flag")
+			fmt.Println("  3. Run the program with --no-tui flag if you don't need the API server")
+			os.Exit(1)
+		}
 		fmt.Println("Error: Invalid config.json file. Please check your configuration.")
 		os.Exit(1)
 	}
@@ -184,19 +184,11 @@ func GetAPIPort() int {
 }
 
 func GetStartAPIServer() bool {
-	configPath := GetConfigPath()
-	configFile, err := os.ReadFile(configPath)
+	config, err := readCachedConfig()
 	if err != nil {
 		fmt.Println("Error reading config file:", err)
 		return false
 	}
-
-	var config Config
-	if err := json.Unmarshal(configFile, &config); err != nil {
-		fmt.Println("Error parsing config JSON:", err)
-		return false
-	}
-
 	return config.StartAPIServer
 }
 
@@ -213,48 +205,26 @@ func checkConfig() bool {
 
 // GetEmailConfig reads the configuration file and returns email-related settings
 func GetEmailConfig() (name string, companysendToOthers bool, recipientEmail, senderEmail, replyToEmail, resendAPIKey string, err error) {
-	configPath := GetConfigPath()
-	configFile, err := os.ReadFile(configPath)
+	config, err := readCachedConfig()
 	if err != nil {
 		return "", false, "", "", "", "", fmt.Errorf("error reading config file: %w", err)
 	}
-
-	var config Config
-	if err := json.Unmarshal(configFile, &config); err != nil {
-		return "", false, "", "", "", "", fmt.Errorf("error parsing config JSON: %w", err)
-	}
-
 	return config.Name, config.SendToOthers, config.RecipientEmail,
 		config.SenderEmail, config.ReplyToEmail, config.ResendAPIKey, nil
 }
 
 func GetDocumentType() string {
-	configPath := GetConfigPath()
-	configFile, err := os.ReadFile(configPath)
+	config, err := readCachedConfig()
 	if err != nil {
 		log.Printf("error reading config file: %v", err)
-		return ""
-	}
-	var config struct {
-		SendDocumentType string `json:"sendDocumentType"`
-	}
-	if err := json.Unmarshal(configFile, &config); err != nil {
-		log.Printf("error parsing config JSON: %v", err)
 		return ""
 	}
 	return config.SendDocumentType
 }
 
 func GetExportLanguage() string {
-	configPath := GetConfigPath()
-	configFile, err := os.ReadFile(configPath)
+	config, err := readCachedConfig()
 	if err != nil {
-		return "en"
-	}
-	var config struct {
-		ExportLanguage string `json:"exportLanguage"`
-	}
-	if err := json.Unmarshal(configFile, &config); err != nil {
 		return "en"
 	}
 	if config.ExportLanguage == "" {
@@ -264,17 +234,10 @@ func GetExportLanguage() string {
 }
 
 func GetUserConfig() (name string, companyName string, freeSpeech string, err error) {
-	configPath := GetConfigPath()
-	configFile, err := os.ReadFile(configPath)
+	config, err := readCachedConfig()
 	if err != nil {
 		return "", "", "", fmt.Errorf("error reading config file: %w", err)
 	}
-
-	var config Config
-	if err := json.Unmarshal(configFile, &config); err != nil {
-		return "", "", "", fmt.Errorf("error parsing config JSON: %w", err)
-	}
-
 	return config.Name, config.CompanyName, config.FreeSpeech, nil
 }
 
@@ -776,6 +739,7 @@ func SaveConfig(config Config) error {
 		logging.Log("Warning: could not chmod %s to %o: %v", configPath, perm, err)
 	}
 
+	invalidateConfigCache()
 	return nil
 }
 
@@ -787,16 +751,10 @@ func GetDevelopmentMode() bool {
 		return true
 	}
 
-	// Fall back to config file
-	configPath := GetConfigPath()
-	configFile, err := os.ReadFile(configPath)
+	// Fall back to (cached) config file
+	config, err := readCachedConfig()
 	if err != nil {
 		log.Printf("error reading config file: %v", err)
-		return false
-	}
-	var config Config
-	if err := json.Unmarshal(configFile, &config); err != nil {
-		log.Printf("error parsing config JSON: %v", err)
 		return false
 	}
 
@@ -810,47 +768,9 @@ func GetDevelopmentMode() bool {
 }
 
 // GetConfig reads and returns the configuration from the config file
+// (or from an in-memory cache — see cache.go).
 func GetConfig() (Config, error) {
-	configPath := GetConfigPath()
-
-	// Create debug info
-	debugInfo := map[string]interface{}{
-		"configPath": configPath,
-	}
-
-	configFile, err := os.ReadFile(configPath)
-	if err != nil {
-		debugInfo["error"] = fmt.Sprintf("Error reading config file: %v", err)
-		writeDebugToFile(debugInfo)
-		return Config{}, err
-	}
-
-	debugInfo["configContent"] = string(configFile)
-
-	var config Config
-	if err := json.Unmarshal(configFile, &config); err != nil {
-		debugInfo["error"] = fmt.Sprintf("Error parsing config JSON: %v", err)
-		writeDebugToFile(debugInfo)
-		return Config{}, err
-	}
-
-	debugInfo["parsedVacationHours"] = config.VacationHours
-	writeDebugToFile(debugInfo)
-
-	return config, nil
-}
-
-// writeDebugToFile writes debug information to a JSON file
-func writeDebugToFile(debugInfo map[string]interface{}) {
-	debugJSON, err := json.MarshalIndent(debugInfo, "", "  ")
-	if err != nil {
-		return
-	}
-
-	// Write to debug file in the same directory as config
-	configDir := filepath.Dir(GetConfigPath())
-	debugPath := filepath.Join(configDir, "config_debug.json")
-	os.WriteFile(debugPath, debugJSON, 0644)
+	return readCachedConfig()
 }
 
 // GetDBPath returns the path to the database file, using config if set
@@ -956,12 +876,14 @@ func GetAPIBaseURL() string {
 func SetRuntimeDBType(dbType string) {
 	runtimeDBType = dbType
 	logging.Log("Runtime database type set to: %v", dbType)
+	invalidateConfigCache()
 }
 
 // SetRuntimePostgresURL sets the runtime PostgreSQL URL
 func SetRuntimePostgresURL(url string) {
 	runtimePostgresURL = url
 	logging.Log("Runtime PostgreSQL URL set")
+	invalidateConfigCache()
 }
 
 // GetDBType returns the database type: "sqlite" or "postgres"

@@ -115,3 +115,33 @@ After implementing changes:
 2. Update tests to match the new behavior
 3. Run `go test ./...` to verify all tests pass
 4. Fix any failing tests before considering the work complete
+
+## Profiling
+
+To profile a running instance, set `TIMESHEETZ_PPROF=1`. This starts
+`net/http/pprof` on `127.0.0.1:6060` (loopback only, not exposed on the
+network). When the env var is unset the endpoint is not started and has
+zero cost.
+
+```bash
+TIMESHEETZ_PPROF=1 timesheetz &
+
+# Heap allocations (in-use memory)
+go tool pprof http://127.0.0.1:6060/debug/pprof/heap
+
+# CPU profile (30s sample)
+go tool pprof http://127.0.0.1:6060/debug/pprof/profile
+
+# Allocation profile (total allocs since start)
+go tool pprof http://127.0.0.1:6060/debug/pprof/allocs
+
+# Goroutine dump
+curl -s http://127.0.0.1:6060/debug/pprof/goroutine?debug=2
+```
+
+Benchmarks live alongside the code they measure (e.g.
+`internal/db/clients_bench_test.go`). Run with:
+
+```bash
+go test ./internal/db -bench=. -benchmem -run=^$
+```

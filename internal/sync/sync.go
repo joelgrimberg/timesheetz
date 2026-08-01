@@ -25,6 +25,10 @@ type SyncService struct {
 	stopChan     chan struct{}
 	running      bool
 
+	// Incremental / full mode. Default Incremental (see incremental.go).
+	// Overridable by TIMESHEETZ_SYNC_MODE=full at NewSyncService time.
+	mode syncMode
+
 	// Stats
 	lastSyncStats SyncStats
 }
@@ -49,14 +53,26 @@ const (
 	SyncPullOnly                    // Remote -> Local
 )
 
-// NewSyncService creates a new sync service
+// NewSyncService creates a new sync service. Sync mode defaults to
+// Incremental (fast idle skip via sync_state cursors); set the env var
+// TIMESHEETZ_SYNC_MODE=full to force full-scan behavior.
 func NewSyncService(localDB, remoteDB *sql.DB, interval time.Duration) *SyncService {
 	return &SyncService{
 		localDB:      localDB,
 		remoteDB:     remoteDB,
 		syncInterval: interval,
 		stopChan:     make(chan struct{}),
+		mode:         syncModeFromEnv(),
 	}
+}
+
+// syncModeFromEnv reads TIMESHEETZ_SYNC_MODE. Any value other than "full"
+// (including unset) yields Incremental.
+func syncModeFromEnv() syncMode {
+	if envSyncMode() == "full" {
+		return syncModeFull
+	}
+	return syncModeIncremental
 }
 
 // Start begins background synchronization
@@ -147,12 +163,34 @@ func (s *SyncService) Sync(direction SyncDirection) error {
 	}
 
 	for _, table := range tables {
+		// Incremental fast-path: skip the full reconcile when neither
+		// side has changed since the last recorded cursor. Falls through
+		// to the full sync on schema-less first run or when SyncMode is
+		// forced to Full.
+		if s.mode == syncModeIncremental {
+			skip, err := s.shouldSkipTableSync(table.name)
+			if err != nil {
+				logging.Log("incremental probe failed for %s (falling back to full sync): %v", table.name, err)
+			} else if skip {
+				stats.TablesProcessed++
+				continue
+			}
+		}
+
 		if err := table.syncFunc(direction, &stats); err != nil {
 			errMsg := fmt.Sprintf("Error syncing %s: %v", table.name, err)
 			stats.Errors = append(stats.Errors, errMsg)
 			logging.Log("%s", errMsg)
 		} else {
 			stats.TablesProcessed++
+			// Persist the new cursor only after a successful sync — on
+			// partial failure the cursor stays put and the next cycle
+			// retries the same range.
+			if s.mode == syncModeIncremental {
+				if err := s.advanceCursorAfterSync(table.name); err != nil {
+					logging.Log("failed to advance cursor for %s: %v", table.name, err)
+				}
+			}
 		}
 	}
 
@@ -169,6 +207,35 @@ func (s *SyncService) Sync(direction SyncDirection) error {
 		return fmt.Errorf("sync completed with %d errors", len(stats.Errors))
 	}
 	return nil
+}
+
+// PruneTombstones removes tombstones older than the given retention
+// window on both sides. Exposed as an explicit maintenance call rather
+// than a per-sync-cycle side-effect: pruning is a one-way irreversible
+// operation, and dropping a tombstone before an offline peer has
+// observed it causes the deleted row to reappear.
+//
+// Retention MUST be larger than the longest realistic offline window
+// (e.g. a laptop taken on a month-long vacation). 30 days is a
+// reasonable default for most single-user setups.
+func (s *SyncService) PruneTombstones(retention time.Duration) (localPruned, remotePruned int64, err error) {
+	cutoff := db.FormatTimestamp(time.Now().UTC().Add(-retention))
+	localPruned, localErr := db.PruneTombstones(s.localDB, "sqlite", cutoff)
+	if localErr != nil {
+		logging.Log("prune local tombstones: %v", localErr)
+		err = localErr
+	}
+	remotePruned, remoteErr := db.PruneTombstones(s.remoteDB, "postgres", cutoff)
+	if remoteErr != nil {
+		logging.Log("prune remote tombstones: %v", remoteErr)
+		if err == nil {
+			err = remoteErr
+		}
+	}
+	if localPruned > 0 || remotePruned > 0 {
+		logging.Log("Pruned tombstones: local=%d remote=%d (cutoff %s)", localPruned, remotePruned, cutoff)
+	}
+	return localPruned, remotePruned, err
 }
 
 // syncClients synchronizes the clients table
@@ -219,6 +286,9 @@ func (s *SyncService) syncClients(direction SyncDirection, stats *SyncStats) err
 		func(key string) error {
 			_, err := s.localDB.Exec(`DELETE FROM clients WHERE name = ?`, key)
 			delete(localMap, key)
+			if err == nil {
+				db.InvalidateRateCache()
+			}
 			return err
 		},
 		func(key string) error {
@@ -364,6 +434,9 @@ func (s *SyncService) syncClientRates(direction SyncDirection, stats *SyncStats)
 			}
 			_, err := s.localDB.Exec(`DELETE FROM client_rates WHERE client_id = ? AND effective_date = ?`, cid, date)
 			delete(localRateMap, key)
+			if err == nil {
+				db.InvalidateRateCache()
+			}
 			return err
 		},
 		func(key string) error {
