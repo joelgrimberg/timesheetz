@@ -60,6 +60,7 @@ func UpdateTimesheet(c *gin.Context) {
 		"training_hours": entry.Training_hours,
 		"holiday_hours":  entry.Holiday_hours,
 		"sick_hours":     entry.Sick_hours,
+		"notes":          entry.Notes,
 	}
 	dl := datalayer.GetDataLayer()
 	if err := dl.UpdateTimesheetEntryById(id, updateData); err != nil {

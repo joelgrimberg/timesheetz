@@ -73,7 +73,8 @@ func (p *PostgresDBLayer) GetAllTimesheetEntries(year int, month time.Month) ([]
 	argNum := 1
 
 	baseQuery := `SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours,
-		(client_hours + vacation_hours + idle_hours + training_hours + sick_hours + holiday_hours) AS total_hours
+		(client_hours + vacation_hours + idle_hours + training_hours + sick_hours + holiday_hours) AS total_hours,
+		COALESCE(notes, '') AS notes
 		FROM timesheet`
 
 	if year != 0 && month != 0 {
@@ -110,7 +111,7 @@ func (p *PostgresDBLayer) GetAllTimesheetEntries(year int, month time.Month) ([]
 		var entry TimesheetEntry
 		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours,
 			&entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Sick_hours,
-			&entry.Holiday_hours, &entry.Total_hours); err != nil {
+			&entry.Holiday_hours, &entry.Total_hours, &entry.Notes); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
@@ -121,14 +122,15 @@ func (p *PostgresDBLayer) GetAllTimesheetEntries(year int, month time.Month) ([]
 
 func (p *PostgresDBLayer) GetTimesheetEntryByDate(date string) (TimesheetEntry, error) {
 	query := `SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours,
-		(client_hours + vacation_hours + idle_hours + training_hours + holiday_hours + sick_hours) AS total_hours
+		(client_hours + vacation_hours + idle_hours + training_hours + holiday_hours + sick_hours) AS total_hours,
+		COALESCE(notes, '') AS notes
 		FROM timesheet WHERE date = $1`
 
 	var entry TimesheetEntry
 	err := pgDB.QueryRow(query, date).Scan(
 		&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours,
 		&entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours,
-		&entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours,
+		&entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours, &entry.Notes,
 	)
 	if err != nil {
 		return TimesheetEntry{}, err
@@ -138,25 +140,25 @@ func (p *PostgresDBLayer) GetTimesheetEntryByDate(date string) (TimesheetEntry, 
 
 func (p *PostgresDBLayer) AddTimesheetEntry(entry TimesheetEntry) error {
 	now := NowTimestamp()
-	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, notes, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	_, err := pgDB.Exec(query,
 		entry.Date, entry.Client_name, entry.Client_hours, entry.Vacation_hours,
 		entry.Idle_hours, entry.Training_hours, entry.Sick_hours, entry.Holiday_hours,
-		now, now)
+		entry.Notes, now, now)
 	return err
 }
 
 func (p *PostgresDBLayer) UpdateTimesheetEntry(entry TimesheetEntry) error {
 	query := `UPDATE timesheet
 		SET client_name = $1, client_hours = $2, vacation_hours = $3, idle_hours = $4,
-		    training_hours = $5, holiday_hours = $6, sick_hours = $7, updated_at = $8
-		WHERE date = $9`
+		    training_hours = $5, holiday_hours = $6, sick_hours = $7, notes = $8, updated_at = $9
+		WHERE date = $10`
 
 	result, err := pgDB.Exec(query,
 		entry.Client_name, entry.Client_hours, entry.Vacation_hours,
 		entry.Idle_hours, entry.Training_hours, entry.Holiday_hours,
-		entry.Sick_hours, NowTimestamp(), entry.Date)
+		entry.Sick_hours, entry.Notes, NowTimestamp(), entry.Date)
 	if err != nil {
 		return fmt.Errorf("failed to update record: %w", err)
 	}
@@ -245,7 +247,8 @@ func (p *PostgresDBLayer) GetTrainingEntriesForYear(year int) ([]TimesheetEntry,
 	rows, err := pgDB.Query(`
 		SELECT id, date, client_name, client_hours, training_hours, vacation_hours,
 		       idle_hours, holiday_hours, sick_hours,
-		       (client_hours + training_hours + vacation_hours + idle_hours + holiday_hours + sick_hours) as total_hours
+		       (client_hours + training_hours + vacation_hours + idle_hours + holiday_hours + sick_hours) as total_hours,
+		       COALESCE(notes, '') AS notes
 		FROM timesheet
 		WHERE date BETWEEN $1 AND $2
 		AND training_hours > 0
@@ -262,7 +265,7 @@ func (p *PostgresDBLayer) GetTrainingEntriesForYear(year int) ([]TimesheetEntry,
 		err := rows.Scan(
 			&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours,
 			&entry.Training_hours, &entry.Vacation_hours, &entry.Idle_hours,
-			&entry.Holiday_hours, &entry.Sick_hours, &entry.Total_hours,
+			&entry.Holiday_hours, &entry.Sick_hours, &entry.Total_hours, &entry.Notes,
 		)
 		if err != nil {
 			return nil, err
@@ -275,7 +278,8 @@ func (p *PostgresDBLayer) GetTrainingEntriesForYear(year int) ([]TimesheetEntry,
 func (p *PostgresDBLayer) GetVacationEntriesForYear(year int) ([]TimesheetEntry, error) {
 	rows, err := pgDB.Query(`
 		SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours,
-		       (client_hours + vacation_hours + idle_hours + training_hours + sick_hours + holiday_hours) AS total_hours
+		       (client_hours + vacation_hours + idle_hours + training_hours + sick_hours + holiday_hours) AS total_hours,
+		       COALESCE(notes, '') AS notes
 		FROM timesheet
 		WHERE EXTRACT(YEAR FROM date::date) = $1 AND vacation_hours > 0
 		ORDER BY date DESC
@@ -290,7 +294,7 @@ func (p *PostgresDBLayer) GetVacationEntriesForYear(year int) ([]TimesheetEntry,
 		var entry TimesheetEntry
 		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours,
 			&entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours,
-			&entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours); err != nil {
+			&entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours, &entry.Notes); err != nil {
 			return nil, fmt.Errorf("failed to scan timesheet vacation entry: %w", err)
 		}
 		entries = append(entries, entry)
@@ -1194,6 +1198,7 @@ func UpdateTimesheetEntryByIdPostgres(id string, data map[string]any) error {
 		"training_hours": true,
 		"holiday_hours":  true,
 		"sick_hours":     true,
+		"notes":          true,
 	}
 
 	query := "UPDATE timesheet SET "

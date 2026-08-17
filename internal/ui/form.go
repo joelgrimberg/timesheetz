@@ -23,6 +23,7 @@ const (
 	IdleHoursField
 	HolidayHoursField
 	SickHoursField
+	NotesField
 )
 
 // Add to your message types
@@ -80,6 +81,13 @@ func InitialFormModelWithDate(date string) FormModel {
 		inputs = append(inputs, i)
 	}
 
+	// Notes field (optional free-text)
+	notesInput := textinput.New()
+	notesInput.Placeholder = "Notes (optional)"
+	notesInput.CharLimit = 200
+	notesInput.Width = 50
+	inputs = append(inputs, notesInput)
+
 	// Load active clients for autocomplete
 	dataLayer := datalayer.GetDataLayer()
 	activeClients, err := dataLayer.GetActiveClients()
@@ -106,6 +114,7 @@ func (m *FormModel) prefillFromEntry(entry db.TimesheetEntry) {
 	m.inputs[IdleHoursField].SetValue(strconv.Itoa(entry.Idle_hours))
 	m.inputs[HolidayHoursField].SetValue(strconv.Itoa(entry.Holiday_hours))
 	m.inputs[SickHoursField].SetValue(strconv.Itoa(entry.Sick_hours))
+	m.inputs[NotesField].SetValue(entry.Notes)
 }
 
 // Clear all form fields except the date
@@ -117,6 +126,7 @@ func (m *FormModel) clearForm() {
 	m.inputs[IdleHoursField].SetValue("")
 	m.inputs[HolidayHoursField].SetValue("")
 	m.inputs[SickHoursField].SetValue("")
+	m.inputs[NotesField].SetValue("")
 }
 
 // SetFocus sets focus to a specific field
@@ -372,6 +382,8 @@ func (m FormModel) handleSubmit() tea.Cmd {
 		clientName = "-"
 	}
 
+	notes := strings.TrimSpace(m.inputs[NotesField].Value())
+
 	// Save to database
 	entry := db.TimesheetEntry{
 		Date:           date,
@@ -383,6 +395,7 @@ func (m FormModel) handleSubmit() tea.Cmd {
 		Holiday_hours:  holidayHours,
 		Sick_hours:     sickHours,
 		Total_hours:    totalHours,
+		Notes:          notes,
 	}
 
 	var saveErr error
@@ -422,6 +435,7 @@ func fieldLabel(i int) string {
 		"Idle Hours:",
 		"Holiday Hours:",
 		"Sick Hours:",
+		"Notes:",
 	}
 	return labels[i]
 }

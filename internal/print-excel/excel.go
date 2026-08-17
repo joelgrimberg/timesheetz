@@ -20,6 +20,7 @@ type TimesheetRow struct {
 	IdleHours     float64
 	HolidayHours  float64
 	SickHours     float64
+	Notes         string
 }
 
 type excelTranslations struct {
@@ -263,6 +264,10 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 	// Weekend background fill (light grey)
 	weekendFill := &excelize.Fill{Type: "pattern", Color: []string{"D9D9D9"}, Pattern: 1}
 
+	// Column M (Toelichting / Notes) uses wrap-text so long notes don't
+	// overflow past the right border of the cell.
+	notesAlign := &excelize.Alignment{Horizontal: "left", Vertical: "top", WrapText: true}
+
 	// Border styles for data table - outer border only
 	// Top row styles
 	dataTopLeft, _ := f.NewStyle(&excelize.Style{
@@ -282,7 +287,7 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 	})
 	dataTopRight, _ := f.NewStyle(&excelize.Style{
 		Font:      defaultFont,
-		Alignment: centerAlign,
+		Alignment: notesAlign,
 		Border: []excelize.Border{
 			{Type: "top", Color: borderColor, Style: 1},
 			{Type: "right", Color: borderColor, Style: 1},
@@ -309,7 +314,7 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 	})
 	dataTopRightWeekend, _ := f.NewStyle(&excelize.Style{
 		Font:      defaultFont,
-		Alignment: centerAlign,
+		Alignment: notesAlign,
 		Fill:      *weekendFill,
 		Border: []excelize.Border{
 			{Type: "top", Color: borderColor, Style: 1},
@@ -331,7 +336,7 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 	})
 	dataRight, _ := f.NewStyle(&excelize.Style{
 		Font:      defaultFont,
-		Alignment: centerAlign,
+		Alignment: notesAlign,
 		Border: []excelize.Border{
 			{Type: "right", Color: borderColor, Style: 1},
 		},
@@ -353,7 +358,7 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 	})
 	dataRightWeekend, _ := f.NewStyle(&excelize.Style{
 		Font:      defaultFont,
-		Alignment: centerAlign,
+		Alignment: notesAlign,
 		Fill:      *weekendFill,
 		Border: []excelize.Border{
 			{Type: "right", Color: borderColor, Style: 1},
@@ -499,6 +504,21 @@ func TimesheetToExcel(timesheetData []TimesheetRow, year int, month time.Month) 
 			if data.TrainingHours > 0 {
 				f.SetCellValue(sheetName, fmt.Sprintf("I%d", excelRow), data.TrainingHours)
 				totalOpleiding += data.TrainingHours
+			}
+			if data.Notes != "" {
+				f.SetCellValue(sheetName, fmt.Sprintf("M%d", excelRow), data.Notes)
+				// Grow the row so all wrapped lines are visible. Column M is
+				// ~18 units wide; Tahoma 12 fits roughly 15 chars per line.
+				const charsPerLine = 15
+				const linePt = 15.0
+				lines := (len(data.Notes) + charsPerLine - 1) / charsPerLine
+				if lines < 1 {
+					lines = 1
+				}
+				need := linePt*float64(lines) + 5
+				if need > rowHeight {
+					f.SetRowHeight(sheetName, excelRow, need)
+				}
 			}
 		}
 	}

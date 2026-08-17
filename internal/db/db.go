@@ -79,6 +79,7 @@ type TimesheetEntry struct {
 	Total_hours    int
 	Sick_hours     int
 	Holiday_hours  int
+	Notes          string
 }
 
 // VacationCarryover represents vacation hours carried over from previous year
@@ -211,7 +212,8 @@ func ApplySQLiteSchema(conn *sql.DB) error {
 			idle_hours INTEGER DEFAULT NULL,
 			training_hours INTEGER DEFAULT NULL,
 			sick_hours INTEGER DEFAULT NULL,
-			holiday_hours INTEGER DEFAULT NULL
+			holiday_hours INTEGER DEFAULT NULL,
+			notes TEXT
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_client_name ON timesheet(client_name);`,
 		`CREATE INDEX IF NOT EXISTS idx_timesheet_date ON timesheet(date);`,
@@ -310,6 +312,7 @@ func ApplySQLiteSchema(conn *sql.DB) error {
 	}{
 		{"timesheet", "created_at"},
 		{"timesheet", "updated_at"},
+		{"timesheet", "notes"},
 		{"training_budget", "created_at"},
 		{"training_budget", "updated_at"},
 		{"clients", "updated_at"},
@@ -343,7 +346,8 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 	var args []any
 
 	baseQuery := "SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, " +
-		"(client_hours + vacation_hours + idle_hours + training_hours + sick_hours + holiday_hours) AS total_hours " +
+		"(client_hours + vacation_hours + idle_hours + training_hours + sick_hours + holiday_hours) AS total_hours, " +
+		"COALESCE(notes, '') AS notes " +
 		"FROM timesheet"
 
 	if year != 0 && month != 0 {
@@ -386,7 +390,7 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 	for rows.Next() {
 		var entry TimesheetEntry
 		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours,
-			&entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours); err != nil {
+			&entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours, &entry.Notes); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
@@ -402,7 +406,8 @@ func GetAllTimesheetEntries(year int, month time.Month) ([]TimesheetEntry, error
 // GetTimesheetEntryByDate retrieves a single timesheet entry by date
 func GetTimesheetEntryByDate(date string) (TimesheetEntry, error) {
 	query := `SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours,
-              (client_hours + vacation_hours + idle_hours + training_hours + holiday_hours + sick_hours) AS total_hours
+              (client_hours + vacation_hours + idle_hours + training_hours + holiday_hours + sick_hours) AS total_hours,
+              COALESCE(notes, '') AS notes
               FROM timesheet WHERE date = ?`
 
 	var entry TimesheetEntry
@@ -417,6 +422,7 @@ func GetTimesheetEntryByDate(date string) (TimesheetEntry, error) {
 		&entry.Sick_hours,
 		&entry.Holiday_hours,
 		&entry.Total_hours,
+		&entry.Notes,
 	)
 	if err != nil {
 		return TimesheetEntry{}, err
@@ -431,8 +437,8 @@ func AddTimesheetEntry(entry TimesheetEntry) error {
 	// 	entry.Date, entry.Client_name, entry.Vacation_hours)
 
 	now := NowTimestamp()
-	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, notes, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := db.Exec(query,
 		entry.Date,
 		entry.Client_name,
@@ -442,6 +448,7 @@ func AddTimesheetEntry(entry TimesheetEntry) error {
 		entry.Training_hours,
 		entry.Sick_hours,
 		entry.Holiday_hours,
+		entry.Notes,
 		now, now)
 	if err != nil {
 		return err
@@ -456,6 +463,7 @@ func UpdateTimesheetEntry(entry TimesheetEntry) error {
 	query := `UPDATE timesheet
               SET client_name = ?, client_hours = ?,
                   vacation_hours = ?, idle_hours = ?, training_hours = ?, holiday_hours = ?, sick_hours = ?,
+                  notes = ?,
                   updated_at = ?
               WHERE date = ?`
 
@@ -467,6 +475,7 @@ func UpdateTimesheetEntry(entry TimesheetEntry) error {
 		entry.Training_hours,
 		entry.Holiday_hours,
 		entry.Sick_hours,
+		entry.Notes,
 		NowTimestamp(),
 		entry.Date)
 	if err != nil {
@@ -520,6 +529,7 @@ func UpdateTimesheetEntryById(id string, data map[string]any) error {
 		"training_hours": true,
 		"holiday_hours":  true,
 		"sick_hours":     true,
+		"notes":          true,
 	}
 
 	// Start building the query
@@ -639,7 +649,9 @@ func GetLastClientName() (string, error) {
 // GetVacationEntriesForYear returns all vacation days with vacation_hours > 0 from the timesheet table
 func GetVacationEntriesForYear(year int) ([]TimesheetEntry, error) {
 	rows, err := db.Query(`
-		SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, (client_hours + vacation_hours + idle_hours + training_hours + sick_hours + holiday_hours) AS total_hours
+		SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours,
+			(client_hours + vacation_hours + idle_hours + training_hours + sick_hours + holiday_hours) AS total_hours,
+			COALESCE(notes, '') AS notes
 		FROM timesheet
 		WHERE strftime('%Y', date) = ? AND vacation_hours > 0
 		ORDER BY date DESC
@@ -653,7 +665,7 @@ func GetVacationEntriesForYear(year int) ([]TimesheetEntry, error) {
 	entries := make([]TimesheetEntry, 0, 30)
 	for rows.Next() {
 		var entry TimesheetEntry
-		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours, &entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours); err != nil {
+		if err := rows.Scan(&entry.Id, &entry.Date, &entry.Client_name, &entry.Client_hours, &entry.Vacation_hours, &entry.Idle_hours, &entry.Training_hours, &entry.Sick_hours, &entry.Holiday_hours, &entry.Total_hours, &entry.Notes); err != nil {
 			return nil, fmt.Errorf("failed to scan timesheet vacation entry: %w", err)
 		}
 		entries = append(entries, entry)

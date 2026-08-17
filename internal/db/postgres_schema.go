@@ -38,7 +38,8 @@ func InitializePostgresDatabase() error {
 			holiday_hours INTEGER DEFAULT NULL,
 			client_id INTEGER REFERENCES clients(id),
 			created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+			updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+			notes TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_client_name ON timesheet(client_name)`,
 		`CREATE INDEX IF NOT EXISTS idx_timesheet_date ON timesheet(date)`,
@@ -143,6 +144,12 @@ func InitializePostgresDatabase() error {
 		if err != nil && !strings.Contains(err.Error(), "already exists") {
 			logging.Log("Note: Could not add %s.%s column: %v", m.table, m.column, err)
 		}
+	}
+
+	// timesheet.notes is a free-text column, no CURRENT_TIMESTAMP default.
+	if _, err := pgDB.Exec(`ALTER TABLE timesheet ADD COLUMN IF NOT EXISTS notes TEXT`); err != nil &&
+		!strings.Contains(err.Error(), "already exists") {
+		logging.Log("Note: Could not add timesheet.notes column: %v", err)
 	}
 
 	// Set default values for existing rows that have NULL timestamps

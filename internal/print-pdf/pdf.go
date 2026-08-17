@@ -56,8 +56,15 @@ func stripANSI(str string) string {
 	return result.String()
 }
 
-// TimesheetToPDF converts a timesheet view to a PDF file
-func TimesheetToPDF(viewContent string, sendAsEmail bool) (string, error) {
+// NoteEntry is a single dated note rendered in the PDF's Toelichting appendix.
+type NoteEntry struct {
+	Date string // "YYYY-MM-DD"
+	Note string
+}
+
+// TimesheetToPDF converts a timesheet view to a PDF file. Any non-empty notes
+// in `notes` are rendered as a Toelichting/Notes appendix below the table.
+func TimesheetToPDF(viewContent string, notes []NoteEntry, sendAsEmail bool) (string, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
 	pdf.SetFont("Courier", "", 10) // Monospaced font works better for tabular data
@@ -116,6 +123,27 @@ func TimesheetToPDF(viewContent string, sendAsEmail bool) (string, error) {
 			pdf.Text(10, y, line)
 		}
 		y += lineHeight
+	}
+
+	// Toelichting / Notes appendix
+	if hasNotes := len(notes) > 0; hasNotes {
+		heading := "Notes"
+		if config.GetExportLanguage() == "nl" {
+			heading = "Toelichting"
+		}
+		y += lineHeight
+		pdf.SetFont("Courier", "B", 8)
+		pdf.Text(10, y, heading)
+		y += lineHeight
+		pdf.SetFont("Courier", "", 6)
+		for _, n := range notes {
+			day := n.Date
+			if t, err := time.Parse("2006-01-02", n.Date); err == nil {
+				day = t.Format("02")
+			}
+			pdf.Text(10, y, fmt.Sprintf("%s: %s", day, stripANSI(n.Note)))
+			y += lineHeight
+		}
 	}
 
 	// Save the PDF with a more descriptive filename

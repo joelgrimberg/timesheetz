@@ -320,3 +320,50 @@ func TestSync_BufferDeletePropagates(t *testing.T) {
 	}
 }
 
+// readNote returns the note stored for `date` on `conn`.
+func readNote(t *testing.T, conn *sql.DB, date string) string {
+	t.Helper()
+	var note string
+	if err := conn.QueryRow(`SELECT COALESCE(notes, '') FROM timesheet WHERE date = ?`, date).Scan(&note); err != nil {
+		t.Fatalf("read note: %v", err)
+	}
+	return note
+}
+
+// TestSync_NotePropagatesBothDirections verifies that a note added on one
+// side and an updated note on the other both travel to the peer during
+// bidirectional sync — the fields ride the standard timestamp reconciliation.
+func TestSync_NotePropagatesBothDirections(t *testing.T) {
+	svc, localDB, remoteDB := newSyncPair(t)
+
+	const dateA = "2026-06-14" // note originates on local
+	const dateB = "2026-06-15" // note originates on remote
+	const t0 = "2026-06-14 10:00:00"
+	const t1 = "2026-06-14 10:00:05"
+
+	// Seed both dates on both sides with identical timestamps and empty notes.
+	seedTimesheetRow(t, localDB, "sqlite", dateA, t0)
+	seedTimesheetRow(t, remoteDB, "postgres", dateA, t0)
+	seedTimesheetRow(t, localDB, "sqlite", dateB, t0)
+	seedTimesheetRow(t, remoteDB, "postgres", dateB, t0)
+
+	// Local edits dateA's note; remote edits dateB's note. Newer updated_at on
+	// each side makes it the winner during reconciliation.
+	if _, err := localDB.Exec(`UPDATE timesheet SET notes = ?, updated_at = ? WHERE date = ?`, "local wrote this", t1, dateA); err != nil {
+		t.Fatalf("update local note: %v", err)
+	}
+	if _, err := remoteDB.Exec(`UPDATE timesheet SET notes = $1, updated_at = $2 WHERE date = $3`, "remote wrote this", t1, dateB); err != nil {
+		t.Fatalf("update remote note: %v", err)
+	}
+
+	if err := svc.Sync(SyncBidirectional); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	if got := readNote(t, remoteDB, dateA); got != "local wrote this" {
+		t.Errorf("expected local's note to reach remote for %s, got %q", dateA, got)
+	}
+	if got := readNote(t, localDB, dateB); got != "remote wrote this" {
+		t.Errorf("expected remote's note to reach local for %s, got %q", dateB, got)
+	}
+}

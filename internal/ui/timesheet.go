@@ -378,6 +378,7 @@ func exportToExcel(year int, month time.Month) (string, error) {
 			IdleHours:     float64(entry.Idle_hours),
 			HolidayHours:  float64(entry.Holiday_hours),
 			SickHours:     float64(entry.Sick_hours),
+			Notes:         entry.Notes,
 		}
 		timesheetRows = append(timesheetRows, row)
 	}
@@ -408,6 +409,7 @@ func sendDocument(content string, sendAsEmail bool, year int, month time.Month) 
 				IdleHours:     float64(entry.Idle_hours),
 				HolidayHours:  float64(entry.Holiday_hours),
 				SickHours:     float64(entry.Sick_hours),
+				Notes:         entry.Notes,
 			}
 			timesheetRows = append(timesheetRows, row)
 		}
@@ -415,7 +417,19 @@ func sendDocument(content string, sendAsEmail bool, year int, month time.Month) 
 		// Export to Excel
 		return printExcel.TimesheetToExcel(timesheetRows, year, month)
 	} else {
-		return printPDF.TimesheetToPDF(content, sendAsEmail)
+		// Collect dated notes for the PDF's Toelichting appendix.
+		dataLayer := datalayer.GetDataLayer()
+		entries, err := dataLayer.GetAllTimesheetEntries(year, month)
+		if err != nil {
+			return "", fmt.Errorf("error fetching timesheet entries: %v", err)
+		}
+		var notes []printPDF.NoteEntry
+		for _, entry := range entries {
+			if strings.TrimSpace(entry.Notes) != "" {
+				notes = append(notes, printPDF.NoteEntry{Date: entry.Date, Note: entry.Notes})
+			}
+		}
+		return printPDF.TimesheetToPDF(content, notes, sendAsEmail)
 	}
 }
 
@@ -837,6 +851,9 @@ func generateMonthTable(year int, month time.Month) (table.Model, map[string]int
 		// If we have an entry for this date, use its data
 		if entry, exists := entriesByDate[dateStr]; exists {
 			clientName = entry.Client_name
+			if strings.TrimSpace(entry.Notes) != "" {
+				clientName = "* " + clientName
+			}
 			clientHours = fmt.Sprintf("%d", entry.Client_hours)
 			training = fmt.Sprintf("%d", entry.Training_hours)
 			vacation = fmt.Sprintf("%d", entry.Vacation_hours)

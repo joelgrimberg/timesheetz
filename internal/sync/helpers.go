@@ -38,6 +38,7 @@ type timesheetRecord struct {
 	SickHours     sql.NullInt64
 	HolidayHours  sql.NullInt64
 	ClientId      sql.NullInt64
+	Notes         string
 	CreatedAt     string
 	UpdatedAt     string
 }
@@ -177,7 +178,7 @@ func (s *SyncService) updateClientRateInLocal(r clientRateRecord, localId int, l
 // ============== Timesheet ==============
 
 func (s *SyncService) getTimesheetFromDB(dbConn *sql.DB, dbType string) ([]timesheetRecord, error) {
-	query := `SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, client_id, COALESCE(created_at, ''), COALESCE(updated_at, '') FROM timesheet`
+	query := `SELECT id, date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, client_id, COALESCE(notes, ''), COALESCE(created_at, ''), COALESCE(updated_at, '') FROM timesheet`
 	rows, err := dbConn.Query(query)
 	if err != nil {
 		return nil, err
@@ -187,7 +188,7 @@ func (s *SyncService) getTimesheetFromDB(dbConn *sql.DB, dbType string) ([]times
 	var entries []timesheetRecord
 	for rows.Next() {
 		var e timesheetRecord
-		if err := rows.Scan(&e.Id, &e.Date, &e.ClientName, &e.ClientHours, &e.VacationHours, &e.IdleHours, &e.TrainingHours, &e.SickHours, &e.HolidayHours, &e.ClientId, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		if err := rows.Scan(&e.Id, &e.Date, &e.ClientName, &e.ClientHours, &e.VacationHours, &e.IdleHours, &e.TrainingHours, &e.SickHours, &e.HolidayHours, &e.ClientId, &e.Notes, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		entries = append(entries, e)
@@ -196,26 +197,26 @@ func (s *SyncService) getTimesheetFromDB(dbConn *sql.DB, dbType string) ([]times
 }
 
 func (s *SyncService) insertTimesheetToRemote(e timesheetRecord) error {
-	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, client_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
-	_, err := s.remoteDB.Exec(query, e.Date, e.ClientName, e.ClientHours, e.VacationHours, e.IdleHours, e.TrainingHours, e.SickHours, e.HolidayHours, e.ClientId, e.CreatedAt, e.UpdatedAt)
+	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, client_id, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	_, err := s.remoteDB.Exec(query, e.Date, e.ClientName, e.ClientHours, e.VacationHours, e.IdleHours, e.TrainingHours, e.SickHours, e.HolidayHours, e.ClientId, e.Notes, e.CreatedAt, e.UpdatedAt)
 	return err
 }
 
 func (s *SyncService) updateTimesheetInRemote(e timesheetRecord, remoteId int) error {
-	query := `UPDATE timesheet SET date = $1, client_name = $2, client_hours = $3, vacation_hours = $4, idle_hours = $5, training_hours = $6, sick_hours = $7, holiday_hours = $8, client_id = $9, updated_at = $10 WHERE id = $11`
-	_, err := s.remoteDB.Exec(query, e.Date, e.ClientName, e.ClientHours, e.VacationHours, e.IdleHours, e.TrainingHours, e.SickHours, e.HolidayHours, e.ClientId, e.UpdatedAt, remoteId)
+	query := `UPDATE timesheet SET date = $1, client_name = $2, client_hours = $3, vacation_hours = $4, idle_hours = $5, training_hours = $6, sick_hours = $7, holiday_hours = $8, client_id = $9, notes = $10, updated_at = $11 WHERE id = $12`
+	_, err := s.remoteDB.Exec(query, e.Date, e.ClientName, e.ClientHours, e.VacationHours, e.IdleHours, e.TrainingHours, e.SickHours, e.HolidayHours, e.ClientId, e.Notes, e.UpdatedAt, remoteId)
 	return err
 }
 
 func (s *SyncService) insertTimesheetToLocal(e timesheetRecord) error {
-	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, client_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := s.localDB.Exec(query, e.Date, e.ClientName, e.ClientHours, e.VacationHours, e.IdleHours, e.TrainingHours, e.SickHours, e.HolidayHours, e.ClientId, e.CreatedAt, e.UpdatedAt)
+	query := `INSERT INTO timesheet (date, client_name, client_hours, vacation_hours, idle_hours, training_hours, sick_hours, holiday_hours, client_id, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := s.localDB.Exec(query, e.Date, e.ClientName, e.ClientHours, e.VacationHours, e.IdleHours, e.TrainingHours, e.SickHours, e.HolidayHours, e.ClientId, e.Notes, e.CreatedAt, e.UpdatedAt)
 	return err
 }
 
 func (s *SyncService) updateTimesheetInLocal(e timesheetRecord, localId int) error {
-	query := `UPDATE timesheet SET date = ?, client_name = ?, client_hours = ?, vacation_hours = ?, idle_hours = ?, training_hours = ?, sick_hours = ?, holiday_hours = ?, client_id = ?, updated_at = ? WHERE id = ?`
-	_, err := s.localDB.Exec(query, e.Date, e.ClientName, e.ClientHours, e.VacationHours, e.IdleHours, e.TrainingHours, e.SickHours, e.HolidayHours, e.ClientId, e.UpdatedAt, localId)
+	query := `UPDATE timesheet SET date = ?, client_name = ?, client_hours = ?, vacation_hours = ?, idle_hours = ?, training_hours = ?, sick_hours = ?, holiday_hours = ?, client_id = ?, notes = ?, updated_at = ? WHERE id = ?`
+	_, err := s.localDB.Exec(query, e.Date, e.ClientName, e.ClientHours, e.VacationHours, e.IdleHours, e.TrainingHours, e.SickHours, e.HolidayHours, e.ClientId, e.Notes, e.UpdatedAt, localId)
 	return err
 }
 

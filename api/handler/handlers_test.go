@@ -101,6 +101,7 @@ func TestCreateTimesheet(t *testing.T) {
 		Training_hours: 0,
 		Sick_hours:     0,
 		Holiday_hours:  0,
+		Notes:          "created via API",
 	}
 
 	body, _ := json.Marshal(entry)
@@ -124,6 +125,15 @@ func TestCreateTimesheet(t *testing.T) {
 	}
 	if result.Client_name != "Client A" {
 		t.Errorf("Expected Client A, got %s", result.Client_name)
+	}
+
+	// Note should have been persisted to the DB via AddTimesheetEntry.
+	stored, err := db.GetTimesheetEntryByDate("2024-01-15")
+	if err != nil {
+		t.Fatalf("Failed to re-read entry: %v", err)
+	}
+	if stored.Notes != "created via API" {
+		t.Errorf("Expected note %q, got %q", "created via API", stored.Notes)
 	}
 }
 
@@ -149,6 +159,7 @@ func TestUpdateTimesheet(t *testing.T) {
 	entry.Id = result.Id
 	entry.Client_hours = 6
 	entry.Client_name = result.Client_name // Keep original client name
+	entry.Notes = "updated via API"
 	body, _ := json.Marshal(entry)
 	idStr := strconv.Itoa(result.Id)
 	req := httptest.NewRequest("PUT", "/api/timesheet/"+idStr, bytes.NewBuffer(body))
@@ -164,6 +175,14 @@ func TestUpdateTimesheet(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	stored, err := db.GetTimesheetEntryByDate("2024-01-15")
+	if err != nil {
+		t.Fatalf("Failed to re-read entry: %v", err)
+	}
+	if stored.Notes != "updated via API" {
+		t.Errorf("Expected note %q, got %q", "updated via API", stored.Notes)
 	}
 }
 

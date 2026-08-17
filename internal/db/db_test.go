@@ -183,6 +183,7 @@ func TestAddTimesheetEntry(t *testing.T) {
 		Training_hours: 0,
 		Sick_hours:     0,
 		Holiday_hours:  0,
+		Notes:          "doctor appointment",
 	}
 
 	err := AddTimesheetEntry(entry)
@@ -201,6 +202,9 @@ func TestAddTimesheetEntry(t *testing.T) {
 	if result.Vacation_hours != 2 {
 		t.Errorf("Expected 2 vacation hours, got %d", result.Vacation_hours)
 	}
+	if result.Notes != "doctor appointment" {
+		t.Errorf("Expected note %q, got %q", "doctor appointment", result.Notes)
+	}
 }
 
 func TestUpdateTimesheetEntry(t *testing.T) {
@@ -216,15 +220,17 @@ func TestUpdateTimesheetEntry(t *testing.T) {
 		Training_hours: 0,
 		Sick_hours:     0,
 		Holiday_hours:  0,
+		Notes:          "initial note",
 	}
 
 	if err := AddTimesheetEntry(entry); err != nil {
 		t.Fatalf("Failed to add entry: %v", err)
 	}
 
-	// Update the entry
+	// Update the entry, including the note.
 	entry.Client_hours = 6
 	entry.Vacation_hours = 2
+	entry.Notes = "updated note"
 	err := UpdateTimesheetEntry(entry)
 	if err != nil {
 		t.Fatalf("Failed to update entry: %v", err)
@@ -240,6 +246,22 @@ func TestUpdateTimesheetEntry(t *testing.T) {
 	}
 	if result.Vacation_hours != 2 {
 		t.Errorf("Expected 2 vacation hours, got %d", result.Vacation_hours)
+	}
+	if result.Notes != "updated note" {
+		t.Errorf("Expected note %q, got %q", "updated note", result.Notes)
+	}
+
+	// Clearing the note should round-trip too.
+	entry.Notes = ""
+	if err := UpdateTimesheetEntry(entry); err != nil {
+		t.Fatalf("Failed to clear note: %v", err)
+	}
+	result, err = GetTimesheetEntryByDate("2024-01-15")
+	if err != nil {
+		t.Fatalf("Failed to get entry after clearing note: %v", err)
+	}
+	if result.Notes != "" {
+		t.Errorf("Expected empty note after clear, got %q", result.Notes)
 	}
 
 	// Test updating non-existent entry
@@ -279,10 +301,20 @@ func TestUpdateTimesheetEntryById(t *testing.T) {
 	data := map[string]any{
 		"client_hours":   6,
 		"vacation_hours": 2,
+		"notes":          "PATCHed via id",
 	}
 	err = UpdateTimesheetEntryById(strconv.Itoa(result.Id), data)
 	if err != nil {
 		t.Fatalf("Failed to update entry: %v", err)
+	}
+
+	// Verify the note was persisted via the PATCH allowlist.
+	got, err := GetTimesheetEntryByDate("2024-01-15")
+	if err != nil {
+		t.Fatalf("Failed to re-read entry: %v", err)
+	}
+	if got.Notes != "PATCHed via id" {
+		t.Errorf("Expected note %q, got %q", "PATCHed via id", got.Notes)
 	}
 
 	// Test invalid field
